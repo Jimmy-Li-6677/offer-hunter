@@ -14,7 +14,9 @@ Windows, Google Chrome, [Node.js](https://nodejs.org) 20+, Python 3, and [Claude
 
 ## First-time setup
 
-`<repo>` = the folder you cloned into, e.g. `C:\Users\<username>\offer-hunter`.
+**Easiest:** clone the repo, open a terminal in it, run `claude` and say **"set me up"**. Claude follows [SETUP.md](SETUP.md): it asks for your resume, builds your private files from it, asks only what the resume can't answer, and sets up the browser bridge and launcher with you.
+
+Manual setup instead: `<repo>` = the folder you cloned into, e.g. `C:\Users\<username>\offer-hunter`.
 
 1. **Clone**
    ```powershell

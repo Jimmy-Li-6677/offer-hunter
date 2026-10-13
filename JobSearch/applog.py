@@ -12,6 +12,8 @@ Usage (from the JobSearch folder):
   python applog.py answer --section S --question Q --answer A [--key K]
       -> save a question the user just answered to the ANSWER_* bank in ../private/.env (+ empty key in ../examples/.env.example),
          under "# --- S ---" (created if missing); the same question / key is updated instead of duplicated.
+  python applog.py missing                                        -> what is still empty / unconfirmed in ../private/
+      (REQUIRED items block the job search; exit 1 while any are left)
 
 Statuses: Submitted, Skipped, Needs User, Needs approval, Pending, Candidate.
 """
@@ -195,6 +197,100 @@ def cmd_answer(a):
     print(f"{action}: {key} (section {a.section})")
 
 
+REQUIRED_ENV = ["APPLICANT_EMAIL", "APPLICANT_PHONE", "APPLICANT_CITY_STATE_ZIP", "ANSWER_CONTACT_NAME",
+                "ANSWER_ELIG_LEGALLY_AUTHORIZED_TO_WORK_IN_US", "ANSWER_ELIG_REQUIRE_SPONSORSHIP_NOW_OR_IN_FUTURE"]
+UNSURE = re.compile(r"confirm with|assumed|unless confirmed|ask again|tell claude|\?\?|tbd|<[^>]+>", re.I)
+
+
+def read_env(path):
+    """KEY -> (value, question) for an .env-style file."""
+    out, question = {}, ""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("# Q:"):
+            question = line[4:].strip()
+        m = re.match(r"([A-Z0-9_]+)=(.*)$", line)
+        if m:
+            v = m.group(2).strip()
+            if len(v) >= 2 and v[0] in "\"'`" and v[-1] == v[0]:
+                v = v[1:-1]
+            out[m.group(1)] = (v, question if line.startswith("ANSWER_") else "")
+            question = ""
+    return out
+
+
+def empty_fields(v, path=""):
+    if isinstance(v, dict):
+        for k, x in v.items():
+            if not k.startswith("_"):
+                yield from empty_fields(x, f"{path}.{k}" if path else k)
+    elif isinstance(v, list):
+        if not v:
+            yield path
+        for i, x in enumerate(v):
+            yield from empty_fields(x, f"{path}[{i}]")
+    elif v == "" or (isinstance(v, str) and UNSURE.search(v)):
+        yield path
+
+
+def cmd_missing(a):
+    """What is still missing in private/ before the job search can start (setup step 6)."""
+    required, optional = [], []
+    env = read_env(ENV) if ENV.exists() else None
+    if env is None:
+        required.append("private/.env does not exist (copy examples/.env.example)")
+    else:
+        for k in REQUIRED_ENV:
+            if not env.get(k, ("", ""))[0]:
+                required.append(f".env {k}")
+        if not any(k.startswith("ANSWER_") and v for k, (v, _) in env.items()):
+            required.append(".env has no filled ANSWER_* entries")
+        for k, (v, q) in env.items():
+            if k in REQUIRED_ENV or k.startswith("BRIDGE_"):
+                continue
+            if not v or UNSURE.search(v):
+                optional.append(f".env {k}" + (f'  (Q: {q})' if q else "") + (f'  now: "{v}"' if v else ""))
+        if not env.get("BRIDGE_TOKEN", ("", ""))[0]:
+            required.append(".env BRIDGE_TOKEN (run: npm run token in claude-browser-bridge/server)")
+    cfg_path = PRIVATE / "job-search-config.json"
+    if not cfg_path.exists():
+        required.append("private/job-search-config.json does not exist (copy the example)")
+    else:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        text = cfg_path.read_text(encoding="utf-8")
+        for name in sorted(set(re.findall(r"\$\{([A-Z0-9_]+)\}", text))):
+            if env is not None and not env.get(name, ("", ""))[0]:
+                required.append(f"config uses ${{{name}}} but it is empty in .env")
+        for key in ("roles", "seniority", "locations"):
+            if not cfg.get(key):
+                required.append(f"config {key} is empty")
+        for path in empty_fields({k: cfg.get(k) for k in ("roles", "seniority", "locations", "sources", "skip")}):
+            required.append(f"config {path} is empty or still a <placeholder>")
+        for path in empty_fields(cfg.get("profile", {}), "profile"):
+            optional.append(f"config {path}")
+        step4 = next((s for s in cfg.get("autoApplyLoop", {}).get("steps", []) if s.startswith("4. ")), "")
+        pdf = re.search(r"((?:[A-Za-z]:\\|\.\.\\)[^\s,;\"]+?\.pdf)", step4)
+        pdf_path = None if not pdf else (Path(pdf.group(1)) if ":" in pdf.group(1) else (Path(__file__).parent / pdf.group(1)))
+        if not pdf_path or not pdf_path.exists():
+            required.append("resume PDF named in autoApplyLoop step 4 not found" + (f": {pdf.group(1)}" if pdf else ""))
+    resume_path = PRIVATE / "resume.json"
+    if not resume_path.exists():
+        required.append("private/resume.json does not exist")
+    else:
+        resume = json.loads(resume_path.read_text(encoding="utf-8"))
+        for key in ("experience", "education", "skills"):
+            if not resume.get(key):
+                required.append(f"resume.json {key} is empty")
+        for path in empty_fields(resume, "resume"):
+            optional.append(f"resume.json {path}")
+    print("REQUIRED before the job search can start:" if required else "REQUIRED: all set")
+    for r in required:
+        print("  - " + r)
+    print("Optional / unconfirmed (ask the user, or leave until a form needs it):" if optional else "Optional: nothing missing")
+    for o in optional:
+        print("  - " + o)
+    sys.exit(1 if required else 0)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -211,6 +307,7 @@ def main():
     for f in ("section", "question", "answer"):
         an.add_argument(f"--{f}", required=True)
     an.add_argument("--key")
+    sub.add_parser("missing")
     a = p.parse_args()
     if a.cmd == "check":
         cmd_check(a)
@@ -223,6 +320,8 @@ def main():
         cmd_list(a, only_open=True)
     elif a.cmd == "answer":
         cmd_answer(a)
+    elif a.cmd == "missing":
+        cmd_missing(a)
     else:
         cmd_note(a)
 
