@@ -1,0 +1,128 @@
+{
+  "_about": "Template for private\\job-search-config.json (copy it there and edit). Everything below is sample data: replace roles, seniority, locations, skip rules, sources and the profile with your own. The autoApplyLoop steps are the generic workflow Claude runs every round.",
+  "roles": [
+    "software engineer",
+    "backend engineer",
+    "data engineer"
+  ],
+  "seniority": [
+    "Entry level",
+    "Junior",
+    "Associate",
+    "New Grad"
+  ],
+  "experienceYears": {
+    "max": 2,
+    "stretchAt": 3,
+    "_note": "Years required by a posting are compared with your GENERAL work experience, not your years in one specific skill. Up to max = clear match; stretchAt or more = skip (or Needs approval)."
+  },
+  "postedWithinHours": 24,
+  "locations": [
+    {
+      "name": "<City / metro area>",
+      "linkedinGeoId": "<LinkedIn geoId of the area>",
+      "workModes": [
+        "hybrid",
+        "onsite"
+      ]
+    },
+    {
+      "name": "<Another city>",
+      "linkedinKeyword": "in <City> <State>",
+      "workModes": [
+        "hybrid",
+        "onsite"
+      ]
+    },
+    {
+      "name": "Remote US",
+      "workModes": [
+        "remote"
+      ]
+    }
+  ],
+  "minSalary": "at or above the local median for the role",
+  "skip": {
+    "companies": [
+      "${SKIP_COMPANIES}"
+    ],
+    "rules": [
+      "active security clearance required",
+      "more than experienceYears.max years required",
+      "staffing-agency / job-board reposts",
+      "same company + role already in applications.json",
+      "LinkedIn Easy Apply jobs (apply only via the company site / ATS)",
+      "more than 2 applications to the same company on the same day (company daily cap)"
+    ]
+  },
+  "sources": {
+    "linkedin": true,
+    "careerSites": [
+      "Greenhouse / Ashby / Lever boards",
+      "<company career site>"
+    ]
+  },
+  "loop": {
+    "intervalHours": 2,
+    "candidateCapPerRound": 5,
+    "linkedinSearchDelayMinutes": 2,
+    "autoApply": "clear matches only; stretch/unclear -> Needs approval"
+  },
+  "launcher": {
+    "browserTool": "browser-bridge",
+    "startChrome": true,
+    "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "claudePermissionMode": "auto"
+  },
+  "profile": {
+    "_about": "Your own preference notes. Where these conflict with the search fields above (roles, experienceYears, postedWithinHours, locations, skip, sources, loop) or with autoApplyLoop, those win.",
+    "Target roles and seniority": "",
+    "Locations and remote preference": "",
+    "Minimum salary": "",
+    "Work authorization or visa status": "",
+    "Years of work experience (general)": "",
+    "Notice period": "",
+    "Standard answers to common questions (\"Why this company?\", \"Willing to relocate?\")": "",
+    "Deal-breakers": "",
+    "Street address": "",
+    "Security clearance": "",
+    "Voluntary self-ID": "",
+    "Job sources": "",
+    "Log": ""
+  },
+  "standingRules": {
+    "_about": "Standing search rules, one sentence each. The search fields above override anything here that conflicts.",
+    "rules": [
+      "Only roles from the roles list at the seniority levels listed (about 0 to experienceYears.max years required).",
+      "Source: LinkedIn (signed in in Chrome) plus company career sites.",
+      "Skip anything matching skip.rules or skip.companies; log every candidate / applied / skipped job in applications.json.",
+      "LinkedIn pacing: one search / results page at a time with a break of loop.linkedinSearchDelayMinutes in between, no bulk fetches. On HTTP 429 stop LinkedIn for the round and use company career sites."
+    ]
+  },
+  "autoApplyLoop": {
+    "_about": "The step-by-step program for each round (every loop.intervalHours hours). Clear matches are applied to automatically; everything else is logged for the user.",
+    "noNewPosts": "If a round finds no new posts, run: python applog.py note \"round found no new posts\" and wait for the next round.",
+    "steps": [
+      "1. Read job-search-config.json (all sections; ${NAME} placeholder values come from ..\\private\\.env) and applications.json. Before analyzing ANY job, filter out jobs already logged (any status) with: python applog.py check \"<company>\" \"<role>\" [--id <job id>] - exit 0 = already logged, skip it (unless it is a Candidate / Needs approval job the user approved). Log every analyzed job with python applog.py add ...",
+      "1b. KEEP THE JOB LINK: every job logged in applications.json must have its link - always pass --url to python applog.py add: the company's own posting / application page for Submitted jobs, otherwise the LinkedIn post (https://www.linkedin.com/jobs/view/<id>/). applog.py refuses a Submitted entry without --url; python applog.py list --no-link shows entries still missing a link.",
+      "2. LinkedIn search for jobs posted in the last postedWithinHours hours: judge by the card text (\"Posted X minutes / hours ago\"), ONE results page at a time, waiting loop.linkedinSearchDelayMinutes between searches. Search every area in the locations list (linkedinGeoId, or linkedinKeyword appended to the search). Then 1-2 sites from sources.careerSites if time remains. On HTTP 429: stop LinkedIn for the round.",
+      "2a. FINISH BEFORE NEXT SEARCH: do not run another LinkedIn search until EVERY job on the previous results page has been analyzed - each one either verified + applied, logged as Needs approval / Needs User, or logged as Skipped with the reason. Keep a per-search checklist.",
+      "2a2. CANDIDATE CAP + TIME LIMIT: once loop.candidateCapPerRound qualified candidates are found, stop searching and apply to those first. If finding candidates takes too long (more than ~30 minutes or 3 searches with nothing new), stop searching, apply to what was found, and wait for the next round.",
+      "2b. LINKEDIN FIRST, EVERY ROUND: start each round on LinkedIn and work through all companies with recent posts (small / unknown companies too), searching every role in the roles list. Company career-site browsing is secondary.",
+      "2c. NO EASY APPLY: skip every LinkedIn \"Easy Apply\" job; apply only on the company's own site (\"Apply on company website\" / career site / ATS). Log Easy Apply-only jobs as Skipped with reason \"Easy Apply\" (if the same job is on the company's own site, apply there instead).",
+      "2d. COMPANY DAILY CAP: apply to the same company at most 2 times per calendar day. python applog.py check exits 2 when the cap is reached - then do not apply; log the job as Candidate with note \"company daily cap\".",
+      "3. Verify each candidate on the company's own posting against the seniority, experienceYears, skip and locations settings.",
+      "3a. YEARS = GENERAL EXPERIENCE, NOT PER SKILL: compare a posting's years requirement with the user's general work experience, not their years in that specific skill (\"2 years of <language>\" counts as a 2-year requirement). Only experienceYears.stretchAt or more is skipped.",
+      "4. CLEAR match (up to experienceYears.max years, or new grad / level I, all rules pass) -> apply automatically using the ANSWER_* / APPLICANT_* entries in ..\\private\\.env and the resume ..\\private\\Resume.pdf. Log as Submitted with --url.",
+      "4a. EXPERIENCE FROM RESUME: fill every work-experience / education / skills section from ..\\private\\resume.json (structured copy of the resume PDF) - all jobs with title, company, location, from/to dates (MM/YYYY, \"currently work here\" for the current job), and always fill each \"Role Description\" / responsibilities box with that job's bullets (one per line, \"- \" prefix). If the resume PDF changes, update resume.json too.",
+      "5. STRETCH / unclear (experienceYears.stretchAt years, unusual tech, low pay) -> log as \"Needs approval\" in applications.json, do not apply.",
+      "6. BLOCKED (sign-in, new account, file picker, password, CAPTCHA, arbitration agreement, unknown personal question) -> fill what is possible, LEAVE THE TAB OPEN, log as \"Needs User\" with the tab / URL; the user finishes manually.",
+      "6b. LOGIN PAGES: fill only the email (${APPLICANT_EMAIL}), privacy / accept checkboxes and Next / Continue; retry each step up to 3 times. If a password is needed: tell the user which tab, then call the browser-bridge tool wait_for_password - the user fills the password (e.g. Chrome's password manager); when it reports the password is filled, click Sign In / Create Account and continue. If it times out, or a CAPTCHA / email verification code is required: leave the tab open, log it as \"Needs User - login\", open a new tab and continue with the next application. List all waiting tabs in the round summary.",
+      "6c. SITE NOT ALLOWED: if the browser bridge says \"Site not allowed: <domain>\", do not stop or wait - log the job as \"Needs User\" with note \"site not allowed: <domain>\" + the URL, leave the tab open, and continue with the next job. Mention blocked domains in the round summary.",
+      "6d. SAVE EVERY NEW ANSWER: when a form asks a question the ANSWER_* bank does not cover and the user answers it, immediately run: python applog.py answer --section <matching '# --- section ---' in ..\\private\\.env> --question \"<the question>\" --answer \"<the answer>\" - it adds / updates the entry in ..\\private\\.env (and the empty key in ..\\examples\\.env.example). Reuse that answer on later forms without asking again.",
+      "7. Never type, read or store passwords and never solve CAPTCHAs - the user fills passwords (wait_for_password hand-off, step 6b); after that Claude may click Sign In / Create Account and continue. Close tabs of finished / skipped jobs.",
+      "8. End each round with a short summary of submitted / needs approval / needs user."
+    ]
+  },
+  "answersSource": "The application answer bank lives in ..\\private\\.env as ANSWER_* keys (plus APPLICANT_* for contact). Read it before every application; save each newly answered question with: python applog.py answer --section S --question Q --answer A (autoApplyLoop step 6d)."
+}

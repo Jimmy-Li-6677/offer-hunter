@@ -1,0 +1,50 @@
+{
+  "_about": "Structured copy of your resume PDF (private/Resume.pdf) for filling application forms (work experience, role descriptions, education, skills). Keep in sync with the PDF when the resume changes. Role Description / responsibilities fields: paste that job's bullets (one per line, '- ' prefix). Dates: MM/YYYY.",
+  "source": "<your resume>.pdf (updated YYYY-MM-DD)",
+  "summary": "",
+  "experience": [
+    {
+      "title": "",
+      "company": "",
+      "location": "",
+      "from": "",
+      "to": null,
+      "current": true,
+      "bullets": [
+        ""
+      ]
+    }
+  ],
+  "education": [
+    {
+      "school": "",
+      "location": "",
+      "degree": "",
+      "field": "",
+      "from": "",
+      "to": "",
+      "gpa": ""
+    }
+  ],
+  "skills": {
+    "languages": [
+      ""
+    ],
+    "frameworks": [
+      ""
+    ],
+    "architecture": [
+      ""
+    ],
+    "data": [
+      ""
+    ],
+    "tools": [
+      ""
+    ],
+    "ai": [
+      ""
+    ]
+  },
+  "languagesSpoken": []
+}

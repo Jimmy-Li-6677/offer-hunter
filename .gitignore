@@ -1,0 +1,24 @@
+# Your real data (contact info, answer bank, bridge token, config, resume, application log).
+# Public templates of every file in here live in examples/.
+private/
+private/.env
+private/job-search-config.json
+private/resume.json
+private/*.pdf
+private/applications.json
+private/applications-archive.md
+.env
+
+# Browser bridge call logs (contain page text / URLs from your sessions)
+claude-browser-bridge/logs/
+
+# Claude Code session state / editor / caches / build output
+JobSearch/.claude/
+.vs/
+__pycache__/
+*.pyc
+node_modules/
+dist/
+logs/
+*.log
+StartJobSearch.exe

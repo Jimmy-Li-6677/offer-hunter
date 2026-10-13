@@ -1,0 +1,25 @@
+{
+  "name": "claude-browser-bridge-server",
+  "version": "0.1.0",
+  "description": "Local MCP server that lets Claude Code control your own Chrome through the Claude Browser Bridge extension",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "claude-browser-bridge": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "token": "node dist/index.js --print-token"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12",
+    "typescript": "^5.5.4"
+  }
+}

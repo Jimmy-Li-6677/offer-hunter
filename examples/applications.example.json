@@ -1,0 +1,30 @@
+{
+  "_about": "Log of every job seen by the job search (submitted / skipped / needs approval / needs user / pending / candidate). Single source of truth since 2026-10-13 (migrated from applications.md). Check it before every application (python applog.py check \"<company>\" \"<role>\") and add/update entries with python applog.py add ... --url <job link>. Every entry keeps the job link in \"url\": the company's posting / application page for Submitted jobs (required), otherwise the LinkedIn post; \"\" = link unknown (older entries) - python applog.py list --no-link shows them. Never store .env values here.",
+  "skipStaffingReposters": [
+    "TalentHop",
+    "Hirevantis",
+    "HiredBuddy",
+    "RemoteHunter",
+    "MeeBoss",
+    "Wiraa",
+    "Great Value Hiring",
+    "EngRadar",
+    "AI-training gigs"
+  ],
+  "roundNotes": [],
+  "jobs": [
+    {
+      "date": "YYYY-MM-DD",
+      "company": "Example Company",
+      "role": "Software Engineer I",
+      "location": "City, ST (Hybrid)",
+      "status": "Submitted",
+      "url": "https://job-boards.greenhouse.io/example/jobs/1234567 (posting / application page)",
+      "notes": "ATS used, salary asked, anything to remember",
+      "ids": [
+        "linkedin job id"
+      ],
+      "section": ""
+    }
+  ]
+}

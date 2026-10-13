@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Claude Browser Bridge</title>
+  <style>
+    body { font-family: system-ui, sans-serif; width: 380px; padding: 12px 16px; color: #1f2328; }
+    h1 { font-size: 16px; margin: 0 0 8px; }
+    label { display: block; font-size: 12px; font-weight: 600; margin-top: 10px; }
+    input[type=text], input[type=number], textarea { width: 100%; box-sizing: border-box; font: 12px monospace; padding: 4px; }
+    textarea { height: 140px; }
+    .row { display: flex; gap: 8px; margin-top: 12px; }
+    button { padding: 6px 10px; cursor: pointer; }
+    #stop { background: #cf222e; color: white; border: none; }
+    #start { background: #1a7f37; color: white; border: none; }
+    #status { font-size: 12px; margin: 4px 0; }
+    .hint { font-size: 11px; color: #59636e; }
+  </style>
+</head>
+<body>
+  <h1>Claude Browser Bridge</h1>
+  <div id="status">Status: …</div>
+
+  <label for="token">Token</label>
+  <input id="token" type="text" placeholder="paste from: npm run token" />
+  <div class="hint">In the server folder run <code>npm run token</code> and paste the token here.</div>
+
+  <label for="port">Port</label>
+  <input id="port" type="number" value="8765" />
+
+  <label for="sites">Allowed sites (one per line; subdomains included)</label>
+  <textarea id="sites"></textarea>
+
+  <label><input id="allowAll" type="checkbox" /> Allow all sites (not recommended)</label>
+
+  <div class="row">
+    <button id="save">Save &amp; connect</button>
+    <button id="start">Start</button>
+    <button id="stop">Stop</button>
+  </div>
+  <p class="hint">While Claude controls a tab, Chrome shows a "started debugging this browser" bar and the icon badge shows ▶. Click Stop to disconnect immediately.</p>
+
+  <script src="options.js"></script>
+</body>
+</html>
