@@ -29,7 +29,7 @@ FILTERS = [
     ("grad2027", "2027-grad-only program", "skip: 2027-grad-only programs"),
     ("amazonSde", "Amazon SDE role (cooldown)", "skip: Amazon SDE roles"),
     ("staffing", "Staffing agency", "skip: staffing-agency reposts / jobFeed.staffingAgencies"),
-    ("easyApply", "LinkedIn Easy Apply only", "skip: LinkedIn Easy Apply jobs"),
+    ("easyApply", "LinkedIn Easy Apply only (no company posting found)", "skip: LinkedIn Easy Apply jobs without a company posting (autoApplyLoop 2c)"),
     ("skipCompany", "Company on your skip list", "skip.companies (SKIP_COMPANIES)"),
     ("dailyCap", "Company daily cap reached", "skip: more than 2 applications to a company a day"),
     ("logged", "Already in applications.json", "skip: already in applications.json"),
