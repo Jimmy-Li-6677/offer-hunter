@@ -73,7 +73,7 @@
   .pill.done { background: var(--ok-soft); color: var(--ok); }
   .pill.wait { background: var(--warn-soft); color: var(--warn); }
   .pill.skip { background: var(--gray-soft); color: var(--muted); }
-  .facts { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 8px; margin: 8px 0 2px; }
+  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 220px)); gap: 8px; margin: 8px 0 2px; }
   .fact { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--gray-soft); min-width: 0; }
   .fact .k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .fact .v { display: block; font-size: 14px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
@@ -100,8 +100,36 @@
   .qt small { display: block; color: var(--muted); }
   .qb { display: flex; }
   .empty { text-align: center; color: var(--muted); padding: 40px 16px; background: var(--panel); border: 1px dashed var(--line); border-radius: var(--radius); }
-  details.out { margin-bottom: 12px; font-size: 12px; }
-  details.out pre { white-space: pre-wrap; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; max-height: 240px; overflow: auto; }
+  label.inline { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+  label.inline[hidden] { display: none; }
+  .filters-bar { padding-top: 0; }
+  details.filters { width: 100%; font-size: 13px; }
+  details.filters summary { cursor: pointer; color: var(--muted); }
+  .filter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 4px 16px; margin: 8px 0 4px; }
+  .filter-grid label { display: flex; gap: 8px; align-items: center; min-width: 0; }
+  .filter-grid .n { color: var(--muted); margin-left: auto; }
+  .filter-actions { display: flex; gap: 4px; }
+  .flagnote { font-size: 12px; color: var(--warn); margin-top: 4px; }
+  .hidden-note { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); padding: 0; width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  .dlg { display: flex; flex-direction: column; max-height: calc(100vh - 50px); }
+  .dlg-head { padding: 16px 20px 10px; border-bottom: 1px solid var(--line); }
+  .dlg-head h2 { font-size: 17px; margin: 0 0 4px; }
+  .dlg-head p { color: var(--muted); font-size: 13px; margin: 0; }
+  .dlg-body { padding: 14px 20px; overflow: auto; }
+  .dlg-foot { padding: 12px 20px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .dlg-foot .meta { flex: 1; }
+  .drop { border: 1px dashed var(--line); border-radius: var(--radius); padding: 24px; text-align: center; }
+  .drop input[type=file] { margin-top: 10px; }
+  .ans-sec h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 14px 0 6px; }
+  .ans-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 4px 12px; padding: 6px 0; border-top: 1px solid var(--line); align-items: start; }
+  .ans-row label { font-size: 13px; overflow-wrap: anywhere; text-align: left; padding-top: 6px; }
+  .dlg-body { text-align: left; }
+  .ans-row label .tag { font-size: 11px; color: var(--warn); margin-left: 6px; }
+  .ans-row textarea { width: 100%; min-height: 34px; resize: vertical; font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  .ans-row.empty textarea { border-color: var(--warn); }
+  @media (max-width: 640px) { .ans-row { grid-template-columns: minmax(0, 1fr); } }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>
 </head>
@@ -111,7 +139,9 @@
     <h1>Job Board</h1>
     <span class="meta" id="meta">Loading…</span>
     <span class="spacer"></span>
-    <button id="refresh" class="primary" title="Run the job feed now and add new posts">Refresh jobs</button>
+    <button class="primary" data-search="google" title="Claude searches Google Jobs in a new Chrome tab and adds about 10 candidates here">Search Google Jobs</button>
+    <button id="answersBtn" title="Upload your resume and review the answers Claude uses on application forms">Update my answers</button>
+    <button class="primary" data-search="linkedin" title="Claude searches LinkedIn in a new Chrome tab and adds about 10 candidates here">Search LinkedIn</button>
   </div>
   <div class="bar" style="padding-top:0">
     <label class="sr" for="q">Search</label>
@@ -125,6 +155,30 @@
     </select>
     <label class="sr" for="source">Source</label>
     <select id="source"><option value="">All sources</option></select>
+    <label class="sr" for="area">Location</label>
+    <select id="area"><option value="">Any location</option></select>
+    <label class="sr" for="pay">Salary range</label>
+    <select id="pay">
+      <option value="">Any salary</option>
+      <option value="listed">Salary listed</option>
+      <option value="50000">$50K+</option>
+      <option value="75000">$75K+</option>
+      <option value="100000">$100K+</option>
+      <option value="125000">$125K+</option>
+      <option value="150000">$150K+</option>
+      <option value="200000">$200K+</option>
+    </select>
+    <label class="inline" id="payNoneWrap" hidden><input type="checkbox" id="payNone" checked> include not listed</label>
+  </div>
+  <div class="bar filters-bar">
+    <details class="filters" id="filtersBox">
+      <summary>Hide jobs that fail a filter <span class="meta" id="filtersOn"></span></summary>
+      <div class="filter-grid" id="filters"></div>
+      <div class="filter-actions">
+        <button class="ghost" id="filtersAll">Check all</button>
+        <button class="ghost" id="filtersNone">Clear all</button>
+      </div>
+    </details>
   </div>
 </header>
 
@@ -133,7 +187,7 @@
     <div class="tabs" id="tabs" role="toolbar" aria-label="Status filter"></div>
     <div id="notice" class="notice" hidden></div>
     <div id="error" class="error" role="alert" hidden></div>
-    <details class="out" id="out" hidden><summary>Last refresh output</summary><pre id="outText"></pre></details>
+    <div id="searchStatus" class="notice" hidden></div>
     <div class="bulk" id="bulk">
       <strong id="bulkN"></strong>
       <button id="bulkSelect" class="primary">Add to apply queue</button>
@@ -150,18 +204,50 @@
   </aside>
 </main>
 
+<dialog id="ansDlg" aria-labelledby="ansTitle">
+  <div class="dlg">
+    <div class="dlg-head">
+      <h2 id="ansTitle">Update my answers</h2>
+      <p id="ansSub"></p>
+    </div>
+    <div class="dlg-body" id="ansBody"></div>
+    <div class="dlg-foot">
+      <span class="meta" id="ansStatus"></span>
+      <button id="ansBack" class="ghost" hidden>Upload a resume</button>
+      <button id="ansSkip" class="ghost">Skip - edit answers now</button>
+      <button id="ansClose">Close</button>
+      <button id="ansSave" class="primary" hidden>Save answers</button>
+    </div>
+  </div>
+</dialog>
+
 <script>
 "use strict";
 const GROUPS = [
   { id: "review", label: "To review", match: s => s === "new" },
   { id: "queue", label: "Apply queue", match: s => s === "selected" || s === "applying" },
-  { id: "waiting", label: "Waiting on you", match: s => ["Needs User", "Needs approval", "Pending", "Candidate"].includes(s) },
+  { id: "waiting", label: "Waiting on you", match: s => ["Needs User", "Needs approval", "Pending", "Candidate", "Approved"].includes(s) },
   { id: "done", label: "Submitted", match: s => s === "Submitted" },
   { id: "skipped", label: "Skipped", match: s => s === "skipped" || s === "Skipped" },
   { id: "all", label: "All", match: () => true },
 ];
-const state = { jobs: [], tab: "review", checked: new Set(), expanded: new Set(), busy: false, expLimits: { max: 2, stretchAt: 3 } };
+const state = { jobs: [], tab: "review", checked: new Set(), expanded: new Set(), expLimits: { max: 2, stretchAt: 3 },
+                filters: [], areas: [], hide: new Set() };
 const $ = id => document.getElementById(id);
+const PREFS = "jobboard.filters";  // this browser only: hidden filters, location, salary
+function loadPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PREFS) || "{}");
+    state.hide = new Set(p.hide || []);
+    state.area = p.area || ""; $("pay").value = p.pay || ""; $("payNone").checked = p.payNone !== false;
+  } catch (e) { /* storage blocked: defaults */ }
+}
+function savePrefs() {
+  try {
+    localStorage.setItem(PREFS, JSON.stringify({ hide: [...state.hide], area: $("area").value, pay: $("pay").value,
+                                                 payNone: $("payNone").checked }));
+  } catch (e) { /* storage blocked: choices last until reload */ }
+}
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -173,11 +259,6 @@ function ago(iso) {
   if (m < 60) return `${m}m ago`;
   if (m < 48 * 60) return `${Math.floor(m / 60)}h ago`;
   return `${Math.floor(m / 1440)}d ago`;
-}
-function until(iso) {
-  const m = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
-  if (m <= 1) return "in a minute";
-  return m < 60 ? `in ${m}m` : `in ${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 }
 function pillClass(s) {
   if (s === "new") return "new";
@@ -203,10 +284,10 @@ function apply(data) {
   state.jobs = data.jobs || [];
   const keys = new Set(state.jobs.map(j => j.key));
   state.checked.forEach(k => { if (!keys.has(k)) state.checked.delete(k); });
-  const when = data.fetching ? "fetching new jobs now…" : data.fetchedAt ? `last fetched ${ago(data.fetchedAt)}` : "not fetched yet";
-  const next = data.nextFetchAt && !data.fetching ? ` · next automatic fetch ${until(data.nextFetchAt)}` : "";
-  $("meta").textContent = `${state.jobs.length} jobs on the board · ${when}${next}`;
-  if (data.lastFetchError && !state.busy) showError("The last automatic job fetch failed: " + data.lastFetchError);
+  $("meta").textContent = `${state.jobs.length} jobs on the board`;
+  showSearches(data.searchRequests || []);
+  state.profile = data.profileRequest || null;
+  if ($("ansDlg").open && state.ansStep === "wait") showResumeWait();
   const every = data.queueCheckSeconds;
   $("qhelp").textContent = every
     ? `While Claude's job-search session is running, it starts on these jobs within seconds of adding them, in this order, ` +
@@ -219,7 +300,41 @@ function apply(data) {
   const sel = $("source"), cur = sel.value;
   sel.innerHTML = '<option value="">All sources</option>' + sources.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
   sel.value = sources.includes(cur) ? cur : "";
+  state.filters = data.filters || [];
+  state.areas = data.areas || [];
+  const ar = $("area"), curArea = ar.value || state.area || "";
+  ar.innerHTML = '<option value="">Any location</option>' + state.areas.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join("") +
+    '<option value="~other">Other locations</option>';
+  ar.value = [...state.areas, "~other"].includes(curArea) ? curArea : "";
   render();
+}
+
+// Search buttons: the request goes to Claude's session (queue watcher); Claude searches in Chrome and adds candidates here.
+const SOURCES = { google: "Google Jobs", linkedin: "LinkedIn" };
+function showSearches(reqs) {
+  const open = reqs.filter(r => r.status === "requested" || r.status === "running");
+  document.querySelectorAll("[data-search]").forEach(b => {
+    b.disabled = open.some(r => r.source === b.dataset.search);
+  });
+  const last = reqs[reqs.length - 1];
+  const el = $("searchStatus");
+  let msg = "";
+  if (open.length) {
+    msg = open.map(r => r.status === "running"
+      ? `Claude is searching ${SOURCES[r.source]} in Chrome${r.note ? " - " + r.note : ""}…`
+      : `Waiting for Claude to start the ${SOURCES[r.source]} search (requested ${ago(r.requestedAt)})` +
+        (Date.now() - new Date(r.requestedAt).getTime() > 3 * 60000 ? " - is Claude's job-search session running?" : "") + "…").join(" ");
+  } else if (last && Date.now() - new Date(last.doneAt || last.failedAt || last.requestedAt).getTime() < 30 * 60000) {
+    msg = last.status === "done"
+      ? `${SOURCES[last.source]} search done: ${last.found ?? 0} new candidates added${last.note ? " - " + last.note : ""}. Approve with Add to apply queue.`
+      : `${SOURCES[last.source]} search failed${last.note ? ": " + last.note : ""}.`;
+  }
+  el.textContent = msg;
+  el.hidden = !msg;
+}
+async function requestSearch(source) {
+  try { apply(await api("/api/search", { source })); showError(""); }
+  catch (e) { showError("Could not send the search request: " + e.message); }
 }
 
 function filtered() {
@@ -228,6 +343,9 @@ function filtered() {
   const src = $("source").value;
   let list = state.jobs.filter(j => g.match(j.status) && (!src || j.source === src));
   if (q) list = list.filter(j => [j.title, j.company, j.location, j.description].join(" ").toLowerCase().includes(q));
+  const before = list.length;
+  list = list.filter(passes);
+  state.hiddenCount = before - list.length;
   const by = $("sort").value;
   const cmp = {
     posted: (a, b) => (b.posted || "").localeCompare(a.posted || ""),
@@ -238,7 +356,27 @@ function filtered() {
   return list.sort(cmp);
 }
 
+// location / salary dropdowns and the "hide jobs that fail a filter" checkboxes
+function passes(j) {
+  const area = $("area").value, pay = $("pay").value;
+  if (area === "~other" ? (j.areas || []).length : area && !(j.areas || []).includes(area)) return false;
+  if (pay === "listed" && j.payMax == null) return false;
+  if (pay && pay !== "listed" && (j.payMax == null ? !$("payNone").checked : j.payMax < Number(pay))) return false;
+  return !(j.flags || []).some(f => state.hide.has(f));
+}
+
+function renderFilters() {
+  const counts = {};
+  state.jobs.forEach(j => (j.flags || []).forEach(f => { counts[f] = (counts[f] || 0) + 1; }));
+  $("filters").innerHTML = state.filters.map(f => `
+    <label title="From ${esc(f.rule)}"><input type="checkbox" data-filter="${esc(f.id)}" ${state.hide.has(f.id) ? "checked" : ""}>
+      <span>${esc(f.label)}</span><span class="n">${counts[f.id] || 0}</span></label>`).join("");
+  $("filtersOn").textContent = state.hide.size ? `· ${state.hide.size} on` : "";
+  $("payNoneWrap").hidden = !$("pay").value || $("pay").value === "listed";
+}
+
 function render() {
+  renderFilters();
   $("tabs").innerHTML = GROUPS.map(g => {
     const n = state.jobs.filter(j => g.match(j.status)).length;
     return `<button class="tab" data-tab="${g.id}" aria-pressed="${g.id === state.tab}">${g.label}<span class="n">${n}</span></button>`;
@@ -246,12 +384,14 @@ function render() {
 
   const list = filtered();
   if (!state.jobs.length) {
-    $("list").innerHTML = `<div class="empty">No jobs on the board yet.<br>Click <b>Refresh jobs</b> to run the job feed.</div>`;
+    $("list").innerHTML = `<div class="empty">No jobs on the board yet.<br>Click <b>Search Google Jobs</b> or <b>Search LinkedIn</b> - Claude finds about 10 candidates for you to approve.</div>`;
   } else if (!list.length) {
-    const msg = state.tab === "review" ? "Nothing new to review. New posts appear after the next refresh." : "No jobs in this view.";
+    const msg = state.hiddenCount ? `All ${state.hiddenCount} jobs in this view are hidden by your location / salary / filter choices.`
+      : state.tab === "review" ? "Nothing new to review. Click a search button for new candidates." : "No jobs in this view.";
     $("list").innerHTML = `<div class="empty">${msg}</div>`;
   } else {
-    $("list").innerHTML = list.map(card).join("");
+    $("list").innerHTML = (state.hiddenCount ? `<div class="hidden-note">${state.hiddenCount} hidden by your location / salary / filter choices</div>` : "")
+      + list.map(card).join("");
   }
 
   const q = state.jobs.filter(j => j.status === "selected" || j.status === "applying")
@@ -285,6 +425,8 @@ function facts(j) {
         <span class="k">Experience</span>
         <span class="v ${e.text ? "" : "none"}">${esc(e.text || "Not stated")}</span>
         ${level ? `<span class="lvl">${esc(level)}</span>` : ""}</div>
+      <div class="fact"><span class="k">Work mode</span>
+        <span class="v ${j.workMode ? "" : "none"}">${esc(j.workMode || "Not stated")}</span></div>
     </div>`;
 }
 
@@ -301,6 +443,12 @@ function card(j) {
   if (s === "new" || s === "selected") buttons.push(`<button data-act="skipped" data-key="${k}">Skip</button>`);
   if (s === "skipped") buttons.push(`<button data-act="new" data-key="${k}">Undo skip</button>`);
   const resume = safeUrl(j.logUrl) || applyUrl || posting;
+  if (["Needs approval", "Pending", "Candidate", "Approved"].includes(s))  // failed a rule: apply anyway
+    buttons.push(`<button class="primary" data-act="approve" data-key="${k}" title="Put it back in the apply queue - Claude applies even though it failed a rule">Approve &amp; apply</button>`);
+  if (["Needs User", "Needs approval", "Pending", "Candidate", "Approved"].includes(s)) {
+    buttons.push(`<button data-act="submitted" data-key="${k}" title="You submitted this application yourself - log it as Submitted">Mark as submitted</button>`);
+    buttons.push(`<button data-act="skipwaiting" data-key="${k}" title="Don't apply - log it as Skipped">Skip</button>`);
+  }
   if (s === "Needs User" && resume)  // Claude left the tab open; this reopens the application if that tab is gone
     buttons.push(`<a class="btn-link" href="${esc(resume)}" target="_blank" rel="noopener noreferrer">Continue application ↗</a>`);
   if (posting) buttons.push(`<a href="${esc(posting)}" target="_blank" rel="noopener noreferrer">Open posting ↗</a>`);
@@ -322,10 +470,17 @@ function card(j) {
         </div>
         ${facts(j)}
         ${desc}
+        ${(j.flags || []).length ? `<div class="flagnote">Fails filter: ${esc(j.flags.map(f => (state.filters.find(x => x.id === f) || { label: f }).label).join(" · "))}</div>` : ""}
         ${j.logNotes ? `<div class="lognote">${s === "Needs User" ? "Needs you" : "Log"} (${esc(j.logDate)}): ${esc(j.logNotes)}</div>` : ""}
         <div class="actions">${buttons.join("")}</div>
       </div>
     </article>`;
+}
+
+async function waitingAction(key, action, btn) {
+  btn.disabled = true;
+  try { apply(await api("/api/waiting", { key, action })); showError(""); }
+  catch (e) { btn.disabled = false; showError("Could not update the job: " + e.message); }
 }
 
 async function choose(keys, choice) {
@@ -349,8 +504,13 @@ document.addEventListener("click", e => {
   else if (act === "up") move(key, -1);
   else if (act === "down") move(key, 1);
   else if (["selected", "skipped", "new"].includes(act)) { state.checked.delete(key); choose([key], act); }
+  else if (act === "submitted") waitingAction(key, "submitted", t);
+  else if (act === "skipwaiting") waitingAction(key, "skipped", t);
+  else if (act === "approve") waitingAction(key, "approve", t);
 });
 document.addEventListener("change", e => {
+  const f = e.target.dataset && e.target.dataset.filter;
+  if (f !== undefined) { e.target.checked ? state.hide.add(f) : state.hide.delete(f); savePrefs(); render(); return; }
   const k = e.target.dataset && e.target.dataset.check;
   if (k === undefined) return;
   e.target.checked ? state.checked.add(k) : state.checked.delete(k);
@@ -360,30 +520,129 @@ $("bulkSelect").onclick = () => { const k = [...state.checked]; state.checked.cl
 $("bulkSkip").onclick = () => { const k = [...state.checked]; state.checked.clear(); choose(k, "skipped"); };
 $("bulkClear").onclick = () => { state.checked.clear(); render(); };
 ["q", "sort", "source"].forEach(id => $(id).addEventListener("input", render));
+["area", "pay", "payNone"].forEach(id => $(id).addEventListener("input", () => { savePrefs(); render(); }));
+$("filtersAll").onclick = () => { state.filters.forEach(f => state.hide.add(f.id)); savePrefs(); render(); };
+$("filtersNone").onclick = () => { state.hide.clear(); savePrefs(); render(); };
+loadPrefs();
 
-$("refresh").onclick = async () => {
-  const b = $("refresh");
-  b.disabled = true; b.textContent = "Refreshing…"; state.busy = true;
+document.querySelectorAll("[data-search]").forEach(b => { b.onclick = () => requestSearch(b.dataset.search); });
+
+// ---- Update my answers: 1) upload a resume (Claude reads it and fills what it can), 2) fill in the rest ----
+function openAnswers() {
+  const p = state.profile;
+  if (p && (p.status === "requested" || p.status === "running")) { state.ansStep = "wait"; showResumeWait(); }
+  else showResumeStep();
+  if (!$("ansDlg").open) $("ansDlg").showModal();
+}
+function ansButtons(step) {
+  state.ansStep = step;
+  $("ansSave").hidden = step !== "form";
+  $("ansBack").hidden = step !== "form";
+  $("ansSkip").hidden = step === "form";
+  $("ansSkip").textContent = step === "wait" ? "Don't wait - edit answers now" : "Skip - edit answers now";
+}
+function showResumeStep() {
+  ansButtons("upload");
+  $("ansSub").textContent = "Step 1 of 2 - upload your resume. Claude reads it, updates your resume data and fills in every answer it can.";
+  $("ansStatus").textContent = "";
+  $("ansBody").innerHTML = `<div class="drop">
+      <div><b>Upload your resume</b> (PDF, DOCX, DOC or TXT, up to 5 MB)</div>
+      <input type="file" id="resumeFile" accept=".pdf,.docx,.doc,.txt">
+      <div style="margin-top:12px"><button class="primary" id="resumeUpload" disabled>Upload resume</button></div>
+      <p class="meta" style="margin-top:12px">The file stays on this PC (private/uploads). Claude's job-search session must be running to read it.</p>
+    </div>`;
+  $("resumeFile").onchange = () => { $("resumeUpload").disabled = !$("resumeFile").files.length; };
+  $("resumeUpload").onclick = uploadResume;
+}
+async function uploadResume() {
+  const f = $("resumeFile").files[0];
+  if (!f) return;
+  if (f.size > 5 * 1024 * 1024) { $("ansStatus").textContent = "That file is over 5 MB."; return; }
+  $("resumeUpload").disabled = true;
+  $("ansStatus").textContent = "Uploading…";
+  const data = await new Promise((ok, bad) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result).split(",")[1] || "");
+    r.onerror = () => bad(r.error);
+    r.readAsDataURL(f);
+  });
   try {
-    const r = await api("/api/refresh", {});
-    $("outText").textContent = r.output || "(no output)";
-    $("out").hidden = false;
-    showError(r.ok ? "" : "The job feed reported a problem - see “Last refresh output” below.");
-    apply(r);
+    apply(await api("/api/resume", { name: f.name, data }));
+    state.ansStep = "wait";
+    showResumeWait();
   } catch (e) {
-    showError("Refresh failed: " + e.message);
-  } finally {
-    b.disabled = false; b.textContent = "Refresh jobs"; state.busy = false;
+    $("ansStatus").textContent = "Upload failed: " + e.message;
+    $("resumeUpload").disabled = false;
   }
-};
+}
+function showResumeWait() {
+  const p = state.profile;
+  if (p && p.status === "done") { showAnswerForm(p.note ? "Claude read your resume: " + p.note : "Claude read your resume and filled in what it could."); return; }
+  if (p && p.status === "failed") { showAnswerForm("Claude could not read the resume" + (p.note ? ": " + p.note : "") + ". Fill in the answers below."); return; }
+  ansButtons("wait");
+  $("ansSub").textContent = "Step 1 of 2 - Claude is reading your resume.";
+  const late = p && Date.now() - new Date(p.requestedAt).getTime() > 3 * 60000;
+  $("ansBody").innerHTML = `<div class="drop"><b>${p && p.status === "running" ? "Claude is reading your resume and filling in your answers…" : "Waiting for Claude to pick up your resume…"}</b>
+      <p class="meta" style="margin-top:8px">${late && p.status === "requested" ? "Is Claude's job-search session running? " : ""}The answer list opens by itself when it's done.</p></div>`;
+  $("ansStatus").textContent = "";
+}
+async function showAnswerForm(msg) {
+  ansButtons("form");
+  $("ansSub").textContent = "Step 2 of 2 - review your answers. Leave anything blank: Claude asks you during an application and saves your answer then.";
+  $("ansStatus").textContent = msg || "";
+  $("ansBody").innerHTML = `<p class="meta">Loading questions…</p>`;
+  try { renderAnswers((await api("/api/answers")).questions); }
+  catch (e) { $("ansBody").innerHTML = `<p class="error">Could not load your answers: ${esc(e.message)}</p>`; }
+}
+function renderAnswers(qs) {
+  state.answers = qs;
+  const empty = qs.filter(q => !q.filled).length;
+  const onlyEmpty = state.ansOnlyEmpty ?? empty > 0;
+  const sections = [];
+  qs.forEach(q => { if (!sections.includes(q.section)) sections.push(q.section); });
+  const rows = sec => qs.filter(q => q.section === sec && (!onlyEmpty || !q.filled)).map(q => `
+      <div class="ans-row ${q.filled ? "" : "empty"}">
+        <label for="ans-${esc(q.key)}">${esc(q.question)}${q.filled ? "" : '<span class="tag">not answered</span>'}</label>
+        <textarea id="ans-${esc(q.key)}" data-ans="${esc(q.key)}" rows="${q.value.length > 90 ? 3 : 1}">${esc(q.edited ?? q.value)}</textarea>
+      </div>`).join("");
+  $("ansBody").innerHTML = `
+    <label class="inline" style="margin-bottom:6px"><input type="checkbox" id="ansOnlyEmpty" ${onlyEmpty ? "checked" : ""}>
+      Show only unanswered (${empty} of ${qs.length})</label>
+    ${sections.map(sec => { const r = rows(sec); return r ? `<div class="ans-sec"><h3>${esc(sec)}</h3>${r}</div>` : ""; }).join("")
+      || '<p class="meta">Every question has an answer. Untick the box to review them.</p>'}`;
+  $("ansOnlyEmpty").onchange = e => { collectAnswers(); state.ansOnlyEmpty = e.target.checked; renderAnswers(state.answers); };
+}
+function collectAnswers() {  // keep typed text when the list is re-rendered
+  document.querySelectorAll("[data-ans]").forEach(t => {
+    const q = state.answers.find(x => x.key === t.dataset.ans);
+    if (q && t.value !== q.value) { q.edited = t.value; }
+  });
+}
+async function saveAnswers() {
+  collectAnswers();
+  const answers = {};
+  state.answers.forEach(q => { if (q.edited !== undefined && q.edited !== q.value) answers[q.key] = q.edited; });
+  if (!Object.keys(answers).length) { $("ansStatus").textContent = "Nothing changed."; return; }
+  $("ansSave").disabled = true;
+  try {
+    const r = await api("/api/answers", { answers });
+    $("ansStatus").textContent = `Saved ${r.saved} answer${r.saved === 1 ? "" : "s"}.`;
+    renderAnswers(r.questions);
+  } catch (e) { $("ansStatus").textContent = "Save failed: " + e.message; }
+  finally { $("ansSave").disabled = false; }
+}
+$("answersBtn").onclick = openAnswers;
+$("ansSkip").onclick = () => showAnswerForm("");
+$("ansBack").onclick = showResumeStep;
+$("ansSave").onclick = saveAnswers;
+$("ansClose").onclick = () => $("ansDlg").close();
 
 async function load() {
-  if (state.busy) return;
   try { const d = await api("/api/jobs"); showError(""); apply(d); }
   catch (e) { showError("Cannot reach the job board server (" + e.message + "). Start it with: python jobboard.py"); }
 }
 load();
-setInterval(load, 20000); // picks up Claude's progress (applying / submitted) and new feed runs
+setInterval(load, 5000); // picks up Claude's progress (applying / submitted) and new feed runs
 </script>
 </body>
 </html>

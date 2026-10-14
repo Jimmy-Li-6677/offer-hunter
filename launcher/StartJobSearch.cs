@@ -155,7 +155,7 @@ static class StartJobSearch
             "Follow CLAUDE.md 'Starting the session' and the " + steps.Count + " steps in its autoApplyLoop section. " +
             "Use " + browserText + " in Google Chrome for all browsing." +
             (jobBoard == null ? "" :
-                " There are no timed apply rounds: the job board page " + boardUrl + " fetches jobs by itself; the user picks" +
+                " There are no timed apply rounds: the job board page " + boardUrl + " has Search Google Jobs / Search LinkedIn buttons (autoApplyLoop step 2g: search in a new Chrome tab, add ~10 candidates); the user approves" +
                 " the jobs to apply to there (autoApplyLoop step 2s). Apply only to the jobs listed by python jobboard.py queue," +
                 " in that order, with a QUEUE RUN (step 2q), and start the queue watcher from CLAUDE.md 'Starting the session'" +
                 " so queued jobs are applied to within minutes.");

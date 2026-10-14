@@ -32,13 +32,14 @@
   <textarea id="sites"></textarea>
 
   <label><input id="allowAll" type="checkbox" /> Allow all sites (not recommended)</label>
+  <label><input id="highlight" type="checkbox" checked /> Highlight tabs Claude controls (orange "Claude" tab group + orange page frame)</label>
 
   <div class="row">
     <button id="save">Save &amp; connect</button>
     <button id="start">Start</button>
     <button id="stop">Stop</button>
   </div>
-  <p class="hint">While Claude controls a tab, Chrome shows a "started debugging this browser" bar and the icon badge shows ▶. Click Stop to disconnect immediately.</p>
+  <p class="hint">While Claude controls a tab, Chrome shows a "started debugging this browser" bar, the icon badge shows ▶, and the tab is in an orange "Claude" tab group with an orange frame around the page. Click Stop to disconnect immediately.</p>
 
   <script src="options.js"></script>
 </body>
