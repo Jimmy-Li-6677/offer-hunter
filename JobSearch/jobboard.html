@@ -442,15 +442,14 @@ function card(j) {
   if (s === "selected") buttons.push(`<button data-act="new" data-key="${k}">Remove from queue</button>`);
   if (s === "new" || s === "selected") buttons.push(`<button data-act="skipped" data-key="${k}">Skip</button>`);
   if (s === "skipped") buttons.push(`<button data-act="new" data-key="${k}">Undo skip</button>`);
-  const resume = safeUrl(j.logUrl) || applyUrl || posting;
   if (["Needs approval", "Pending", "Candidate", "Approved"].includes(s))  // failed a rule: apply anyway
     buttons.push(`<button class="primary" data-act="approve" data-key="${k}" title="Put it back in the apply queue - Claude applies even though it failed a rule">Approve &amp; apply</button>`);
   if (["Needs User", "Needs approval", "Pending", "Candidate", "Approved"].includes(s)) {
     buttons.push(`<button data-act="submitted" data-key="${k}" title="You submitted this application yourself - log it as Submitted">Mark as submitted</button>`);
     buttons.push(`<button data-act="skipwaiting" data-key="${k}" title="Don't apply - log it as Skipped">Skip</button>`);
   }
-  if (s === "Needs User" && resume)  // Claude left the tab open; this reopens the application if that tab is gone
-    buttons.push(`<a class="btn-link" href="${esc(resume)}" target="_blank" rel="noopener noreferrer">Continue application ↗</a>`);
+  if (s === "Needs User")  // back to the end of the apply queue; Claude continues in the tab it left open
+    buttons.push(`<button data-act="continue" data-key="${k}" title="Back to the end of the apply queue - Claude finishes it in the tab it left open">Continue application</button>`);
   if (posting) buttons.push(`<a href="${esc(posting)}" target="_blank" rel="noopener noreferrer">Open posting ↗</a>`);
   if (applyUrl && applyUrl !== posting) buttons.push(`<a href="${esc(applyUrl)}" target="_blank" rel="noopener noreferrer">Apply page ↗</a>`);
   const via = j.direct === false && j.publisher ? `via ${esc(j.publisher)}` : "";
@@ -507,6 +506,7 @@ document.addEventListener("click", e => {
   else if (act === "submitted") waitingAction(key, "submitted", t);
   else if (act === "skipwaiting") waitingAction(key, "skipped", t);
   else if (act === "approve") waitingAction(key, "approve", t);
+  else if (act === "continue") waitingAction(key, "continue", t);
 });
 document.addEventListener("change", e => {
   const f = e.target.dataset && e.target.dataset.filter;

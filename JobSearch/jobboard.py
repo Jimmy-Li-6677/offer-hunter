@@ -242,16 +242,20 @@ WAITING = {"Needs User", "Needs approval", "Pending", "Candidate"}
 
 
 APPROVED = "Approved"
+CONTINUE_NOTE = "Continue application clicked by the user on the job board - finish it where it stopped"
 WAITING_ACTIONS = {  # action -> (new applications.json status, note, statuses it applies to)
     "submitted": ("Submitted", "Marked submitted by the user on the job board", WAITING | {APPROVED}),
     "skipped": ("Skipped", "Skipped by the user on the job board", WAITING | {APPROVED}),
     "approve": (APPROVED, "Approved by the user on the job board - apply anyway", WAITING - {"Needs User"} | {APPROVED}),
+    "continue": (APPROVED, CONTINUE_NOTE, {"Needs User", APPROVED}),
 }
+REQUEUE = ("approve", "continue")  # these put the job back in the apply queue, at the end
 
 
 def waiting_action(board, key, action):
-    """A job waiting on the user: mark it submitted (the user finished it), skip it, or approve it (back in the apply
-    queue, applied to even though it failed a rule). Returns an error text, or None."""
+    """A job waiting on the user: mark it submitted (the user finished it), skip it, approve it (back in the apply
+    queue, applied to even though it failed a rule) or continue it (a Needs User job the user reopened: back in the
+    apply queue so Claude finishes it). Returns an error text, or None."""
     if action not in WAITING_ACTIONS:
         return "unknown action"
     new, text, allowed = WAITING_ACTIONS[action]
@@ -262,18 +266,18 @@ def waiting_action(board, key, action):
     e = log_entry(j, data["jobs"])
     if e is None or e.get("status") not in allowed:
         return f"this action is only for jobs that are {' / '.join(sorted(allowed))}"
-    if action == "approve" and e["status"] == APPROVED and j.get("choice") == "selected":
-        return None  # already approved and in the apply queue
+    if action in REQUEUE and e["status"] == APPROVED and j.get("choice") == "selected":
+        return None  # already back in the apply queue
     today = dt.date.today().isoformat()
     e.update({"status": new, "date": today, "url": e.get("url") or j.get("applyUrl") or j.get("url") or "",
               "notes": f'{e.get("notes", "")} | {text} {today} (was {e["status"]}).'.strip(" |")})
     if j.get("id"):
         e["ids"] = sorted(set(e.get("ids", [])) | {j["id"]})
     applog.save(data)
-    if action == "approve":  # to the end of the queue, as a fresh pick
+    if action in REQUEUE:  # to the end of the queue, as a fresh pick
         j.pop("applyingAt", None)
         j["choice"] = "new"
-    set_choice(board, [key], "selected" if action == "approve" else "skipped" if action == "skipped" else j.get("choice", "new"))
+    set_choice(board, [key], "selected" if action in REQUEUE else "skipped" if action == "skipped" else j.get("choice", "new"))
     save_board(board)
     return None
 
@@ -583,7 +587,10 @@ def main():
                 print(f'{i:>3}. {j["company"]} | {j["title"]} | {j.get("location", "")}'
                       f'{" | APPLYING" if j.get("applyingAt") else ""}\n'
                       f'      key: {j["key"]}  id: {j.get("id") or "-"}\n      {(e or {}).get("url") or j.get("applyUrl") or j.get("url")}')
-                if e:  # status Approved
+                if e and e.get("notes", "").rfind(CONTINUE_NOTE) > e.get("notes", "").rfind("Approved by the user"):
+                    print(f'      CONTINUE - the user clicked Continue application: finish this Needs User job where it stopped '
+                          f'(reuse its open tab if it is still there; the user may have done the blocked step): {e.get("notes", "")}')
+                elif e:  # status Approved
                     print(f'      APPROVED BY THE USER - apply even though it failed a rule earlier: {e.get("notes", "")}')
         elif a.cmd == "applying":
             j = board["jobs"].get(a.key)
