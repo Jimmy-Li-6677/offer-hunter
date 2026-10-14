@@ -11,6 +11,9 @@ Usage (from the JobSearch folder):
   python jobboard.py queue            -> selected jobs still to apply to, in the user's order (exit 1 if none)
   python jobboard.py queue --quiet    -> one line for the queue watcher: "<n> jobs in the apply queue" (exit 0) / "apply queue empty" (exit 1)
   python jobboard.py applying <key>   -> mark a queued job as being applied to now (shown on the page)
+  python jobboard.py watch            -> queue watcher for a Claude Monitor: prints one line each time jobs are added to the
+                                         apply queue (seconds after "Add to apply queue" is clicked; full check every
+                                         jobBoard.queueCheckSeconds, default 30). Runs until stopped.
   python jobboard.py sync             -> add the jobs from ../private/jobfeed-latest.json to the board
 
 Job status on the page: new, selected, applying (from this file) or the applications.json status once logged
@@ -133,7 +136,7 @@ def view(board):
             if every and FETCHER["running"] else None,
             "fetching": REFRESH_LOCK.locked(), "lastFetchError": FETCHER["error"]}
     return {"jobs": out, **meta, "requireSelection": cfg.get("requireSelection", True),
-            "queueCheckMinutes": cfg.get("queueCheckMinutes", 10)}
+            "queueCheckSeconds": cfg.get("queueCheckSeconds", 30)}
 
 
 def last_fetch():
@@ -297,6 +300,43 @@ def serve(open_browser=True):
         pass
 
 
+def watch():
+    """Print a line whenever jobs enter the apply queue: on every board save (a click on the page) and every queueCheckSeconds."""
+    import time
+    every = float(config().get("queueCheckSeconds", 30))
+
+    def keys():
+        try:
+            with LOCK:
+                return [j["key"] for j in queue(load_board())]
+        except (OSError, ValueError):
+            return None
+
+    def mtime():
+        try:
+            return BOARD.stat().st_mtime
+        except OSError:
+            return None
+
+    seen = set(keys() or [])
+    if seen:
+        print(f"{len(seen)} job{'' if len(seen) == 1 else 's'} in the apply queue: {' '.join(sorted(seen))}", flush=True)
+    last_m, last_check = mtime(), time.monotonic()
+    while True:
+        time.sleep(2)
+        m = mtime()
+        if m == last_m and time.monotonic() - last_check < every:
+            continue
+        last_m, last_check = m, time.monotonic()
+        cur = keys()
+        if cur is None:
+            continue
+        new = [k for k in cur if k not in seen]
+        if new:
+            print(f"new in apply queue ({len(cur)} queued): {' '.join(new)}", flush=True)
+        seen = set(cur)
+
+
 def main():
     for stream in (sys.stdout, sys.stderr):
         if stream:  # None under pythonw.exe (the launcher starts the server without a console)
@@ -310,7 +350,14 @@ def main():
     ap_ = sub.add_parser("applying")
     ap_.add_argument("key")
     sub.add_parser("sync")
+    sub.add_parser("watch")
     a = ap.parse_args()
+
+    if a.cmd == "watch":
+        try:
+            return watch()
+        except KeyboardInterrupt:
+            return
 
     if a.cmd in (None, "serve"):
         return serve(open_browser=not getattr(a, "no_browser", False))

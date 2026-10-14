@@ -30,10 +30,8 @@ Files:
 ## Starting the session
 There are no timed apply rounds: the job board server fetches jobs (every `jobBoard.fetchEveryHours` hours or on Refresh jobs), the user picks jobs into the apply queue, and Claude applies to the queue. When the user says "continue my job search" (or similar) at the start of a session:
 1. Read `..\private\job-search-config.json` (all sections), `..\private\.env` (answer bank) and `..\private\applications.json`. Briefly list what `python applog.py open` shows (Needs User / Needs approval / Pending / Candidate) and how many new jobs are waiting on the job board.
-2. Start the queue watcher by invoking the `loop` skill with (`<M>m` = `jobBoard.queueCheckMinutes`, default 10; use the absolute paths of `<repo>\...` on this PC):
-   `<M>m Queue watcher: in <repo>\JobSearch run python jobboard.py queue --quiet. If it says "apply queue empty", or a queue run is still in progress, reply only "queue empty" / "busy" and stop. Otherwise do a QUEUE RUN exactly as written in autoApplyLoop step 2q of <repo>\private\job-search-config.json, with the ANSWER_* answer bank in <repo>\private\.env (re-read both files for every run).`
-   Choose "This session only" if asked (cloud agents cannot use Chrome).
-3. Check the queue right away: if `python jobboard.py queue --quiet` lists jobs, do a queue run now. The watcher lasts until the session ends.
+2. Start the queue watcher: run `python jobboard.py watch` (in `<repo>\JobSearch`, absolute path on this PC) with the Monitor tool, `timeout_ms` 1800000 (the maximum). It prints a line within ~2 seconds of the user clicking Add to apply queue (and re-checks every `jobBoard.queueCheckSeconds`, default 30). On each line: if a queue run is already in progress, finish it and re-check `python jobboard.py queue` at its end; otherwise do a QUEUE RUN exactly as written in autoApplyLoop step 2q of `<repo>\private\job-search-config.json`, with the ANSWER_* answer bank in `<repo>\private\.env` (re-read both files for every run). A Monitor expires after 30 minutes: re-arm it every time it does, for as long as the session runs.
+3. Check the queue right away: if `python jobboard.py queue --quiet` lists jobs, do a queue run now.
 
 Browser: Google Chrome (the user is signed in to LinkedIn), via the tool named in `launcher.browserTool` in the config (`browser-bridge` or `claude-in-chrome`) - for applying to queued jobs (step 2q) and LinkedIn searches the user asks for (step 2b). Pace LinkedIn per `loop.linkedinSearchDelayMinutes`; stop LinkedIn on HTTP 429.
 
