@@ -52,6 +52,37 @@ def salary_from(text):
     return ""
 
 
+_PAY = re.compile(r"\$?\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?([kK])?")
+_UNIT = [(re.compile(r"\b(hour|hr)\b|/\s*hr|hourly", re.I), 2080), (re.compile(r"\bmonth", re.I), 12),
+         (re.compile(r"\bweek", re.I), 52)]
+
+
+def salary_annual(text):
+    """(low, high) yearly pay in dollars from a salary text ('95K–154K a year', '4.5K–6.5K a month', '$28 – $39 /hr',
+    '$130,000 – $160,000'), or None. For the job board's salary dropdown."""
+    nums = [float(n.replace(",", "")) * (1000 if k else 1) for n, k in _PAY.findall(text or "")][:2]
+    if not nums:
+        return None
+    lo, hi = min(nums), max(nums)
+    mult = next((m for rx, m in _UNIT if rx.search(text)), 2080 if hi < 500 else 1)
+    lo, hi = lo * mult, hi * mult
+    return (lo, hi) if 10000 <= hi <= 2000000 else None
+
+
+def work_mode(j):
+    """'Remote' / 'Hybrid' / 'On-site' from a job's location + description, '' if it doesn't say."""
+    where, text = j.get("location") or "", f'{j.get("location") or ""} {j.get("description") or ""}'
+    if re.search(r"\bhybrid\b", text, re.I):
+        return "Hybrid"
+    if j.get("remote") or re.search(r"\b(remote|anywhere|work from home)\b", where, re.I):
+        return "Remote"
+    if re.search(r"\b(on[- ]?site|in[- ]office|in[- ]person)\b", text, re.I):
+        return "On-site"
+    if re.search(r"\b(fully remote|100% remote|remote[- ]first)\b", text, re.I):
+        return "Remote"
+    return ""
+
+
 def _num(s):
     return int(s) if s.isdigit() else _WORDS[s.lower()]
 

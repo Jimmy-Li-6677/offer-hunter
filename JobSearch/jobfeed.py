@@ -1,96 +1,126 @@
-"""Job feed - pull fresh job posts from job APIs instead of browsing LinkedIn search pages.
+"""Job feed - pull fresh job posts from Google Jobs through SerpApi (https://serpapi.com/google-jobs-api).
 
-Sources (configured in ../private/job-search-config.json -> "jobFeed"):
-  ats      Greenhouse / Lever / Ashby public job-board APIs for a list of companies (no key needed).
-           Exact first-published timestamps and direct company apply links.
-  jsearch  JSearch (Google for Jobs: LinkedIn, Indeed, Glassdoor, ZipRecruiter, company sites).
-           Key: JSEARCH_API_KEY in ../private/.env (RapidAPI or OpenWeb Ninja key, see jobFeed.jsearch.endpoint).
-  adzuna   Adzuna job search API. Keys: ADZUNA_APP_ID + ADZUNA_APP_KEY in ../private/.env.
-Keyed sources are skipped when their key is missing; paid-quota sources keep a monthly request budget
-(usage counted in ../private/jobfeed-state.json).
+Google Jobs aggregates LinkedIn, Indeed, Glassdoor, ZipRecruiter and company career sites. Each search is one
+(query, location) pair from ../private/job-search-config.json -> "jobFeed.serpapi" and costs one SerpApi request
+per results page (10 jobs). Key: SERPAPI_API_KEY in ../private/.env (serpapi.com -> Dashboard -> API key).
+Searches rotate across runs within maxRequestsPerRound; usage is counted against monthlyRequestBudget in
+../private/jobfeed-state.json and paced so each day gets an even share of what is left of the month. LinkedIn search by Claude stays an optional extra source (jobboard.py add).
 
 Usage (from the JobSearch folder):
-  python jobfeed.py                  -> fetch all enabled sources, print new matching jobs (newest first),
-                                        save them to ../private/jobfeed-latest.json
+  python jobfeed.py                  -> run the next searches, save every job Google returned to
+                                        ../private/jobfeed-raw.json, print the new matching jobs (newest first),
+                                        save them to ../private/jobfeed-latest.json and add them to the job board
   python jobfeed.py --hours 24       -> override jobFeed.postedWithinHours for this run
-  python jobfeed.py --source ats     -> only one source (ats / jsearch / adzuna); repeatable
   python jobfeed.py --rejected       -> also list jobs that were filtered out, with the reason
-  python jobfeed.py --plan           -> show which sources / requests would run and the API budget, without fetching
-  python jobfeed.py --check-boards   -> verify every company slug in jobFeed.ats still returns jobs
+  python jobfeed.py --plan           -> searches, key, budget used and SerpApi searches left, without searching
+  python jobfeed.py --plan --json    -> the numbered searches, the next one and today's budget as JSON
+  python jobfeed.py --search N       -> run only search N (the job board asks the user which search before each fetch)
 
-"New" = passes the title / location / freshness / skip-company filters and is not already in
-../private/applications.json (same company+role or same job id, as in `applog.py check`).
+"New" = passes the title / location / freshness / experience / skip-company filters and is not already in
+../private/applications.json (same company+role or same job id, as in `applog.py check`) or skipped on the board.
 """
 import argparse
-import concurrent.futures as cf
 import datetime as dt
-import html
+import hashlib
 import json
+import os
 import re
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
 
 import applog  # same folder: log + .env helpers
 import jobboard  # same folder: the job board page's data (user's selected / skipped jobs)
+import jobfilters  # same folder: the search filters as named checks
 import jobinfo  # same folder: salary / experience from the job text
 
 PRIVATE = applog.PRIVATE
 CONFIG = PRIVATE / "job-search-config.json"
 STATE = PRIVATE / "jobfeed-state.json"
 LATEST = PRIVATE / "jobfeed-latest.json"
+RAW = PRIVATE / "jobfeed-raw.json"  # every job Google returned in the last run, before any filter
 UTC = dt.timezone.utc
-UA = {"User-Agent": "offer-hunter-jobfeed/1.0"}
+SEARCH_URL = "https://serpapi.com/search.json"
+ACCOUNT_URL = "https://serpapi.com/account.json"  # free: does not count as a search
+# Apply links on these sites are aggregator copies; a link on any other site is taken as the company's own page.
+AGGREGATORS = re.compile(r"linkedin\.|indeed\.|glassdoor\.|ziprecruiter\.|monster\.|simplyhired\.|careerbuilder\.|"
+                         r"dice\.|talent\.com|jooble\.|adzuna\.|lensa\.|jobright\.|builtin\.|wellfound\.|snagajob\.|"
+                         r"salary\.com|bebee\.|jobleads\.|teal\.|getwork\.|whatjobs\.|learn4good\.|tealhq\.", re.I)
 
 
 # ---------- helpers ----------
-def http_json(url, headers=None, timeout=25):
-    req = urllib.request.Request(url, headers={**UA, **(headers or {})})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.load(r)
-
-
-def parse_time(v):
-    """ISO string / epoch ms -> aware UTC datetime (None if unknown)."""
-    if v in (None, ""):
-        return None
-    if isinstance(v, (int, float)):
-        return dt.datetime.fromtimestamp(v / 1000 if v > 1e11 else v, UTC)
+def http_json(url, timeout=40):
+    req = urllib.request.Request(url, headers={"User-Agent": "offer-hunter-jobfeed/2.0"})
     try:
-        t = dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
-        return t if t.tzinfo else t.replace(tzinfo=UTC)
-    except ValueError:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:  # SerpApi explains errors in a JSON body ({"error": "..."})
+        try:
+            msg = json.load(e).get("error")
+        except ValueError:
+            msg = None
+        raise RuntimeError(f"HTTP {e.code}: {msg or e.reason}") from None
+
+
+def posted_time(text, now):
+    """Google Jobs' relative 'posted_at' ('3 hours ago', '1 day ago', 'Just posted') -> aware UTC datetime or None."""
+    t = (text or "").strip().lower()
+    if not t:
         return None
+    if t in ("just posted", "today", "just now"):
+        return now
+    m = re.match(r"(\d+)\+?\s*(minute|min|hour|hr|day|week|month)s?\s+ago", t)
+    if not m:
+        return None
+    n, unit = int(m.group(1)), m.group(2)
+    hours = {"minute": n / 60, "min": n / 60, "hour": n, "hr": n, "day": 24 * n, "week": 168 * n, "month": 720 * n}[unit]
+    return now - dt.timedelta(hours=hours)
 
 
-def job(source, company, title, location, url, posted=None, apply_url=None, remote=False, job_id=None,
-        salary="", publisher="", direct=True, country="", description="", board=""):
-    return {"source": source, "id": str(job_id or ""), "company": (company or "").strip(), "title": (title or "").strip(),
-            "location": (location or "").strip(), "remote": bool(remote), "posted": posted, "url": url or apply_url or "",
-            "applyUrl": apply_url or url or "", "salary": salary, "publisher": publisher, "direct": direct,
-            "country": (country or "").strip(), "description": re.sub(r"\s+", " ", description or "").strip(), "board": board}
+def pick_apply(options):
+    """(link, direct?, site) - the company's own apply page when Google lists one, else the first aggregator link."""
+    options = [o for o in options or [] if o.get("link")]
+    for o in options:
+        if not AGGREGATORS.search(o["link"]):
+            return o["link"], True, o.get("title", "")
+    if options:
+        return options[0]["link"], False, options[0].get("title", "")
+    return "", False, ""
 
 
-def text_of(markup):
-    """HTML (possibly entity-escaped, as Greenhouse sends it) -> plain text on one line."""
-    s = html.unescape(html.unescape(markup or ""))
-    s = re.sub(r"<(br|/p|/li|/h\d|/div)[^>]*>", " ", s, flags=re.I)
-    s = re.sub(r"<[^>]+>", " ", s)
-    return re.sub(r"\s+", " ", s).strip()
-
-
-def real_items(items):
-    """Drop template placeholders like "<ashby-org-slug>" so an unedited example config costs no requests."""
-    return [i for i in items if i and "<" not in i]
+def to_job(r, now):
+    ext = dict(r.get("detected_extensions") or {})
+    # Google Jobs often leaves detected_extensions empty and only lists the chips ('23 hours ago', '90K–112K a year',
+    # 'Full-time', 'Work from home') in 'extensions'
+    for e in r.get("extensions") or []:
+        if not ext.get("posted_at") and (re.search(r"\bago$", e, re.I) or e.lower() in ("just posted", "today")):
+            ext["posted_at"] = e
+        elif not ext.get("salary") and re.search(r"\d.*\b(a|an|per)\s+(year|hour|month|week)\b", e, re.I):
+            ext["salary"] = e
+        elif not ext.get("schedule_type") and re.fullmatch(r"(full|part)[- ]time|contractor|internship|temp\w*", e, re.I):
+            ext["schedule_type"] = e
+        elif e.lower() == "work from home":
+            ext["work_from_home"] = True
+    link, direct, site = pick_apply(r.get("apply_options"))
+    highlights = " ".join(f'{h.get("title", "")}: {" ".join(h.get("items", []))}' for h in r.get("job_highlights") or [])
+    location = (r.get("location") or "").strip()
+    remote = bool(ext.get("work_from_home")) or bool(re.search(r"\b(anywhere|remote)\b", location, re.I))
+    raw_id = r.get("job_id") or f'{r.get("company_name")}|{r.get("title")}'
+    return {"source": "serpapi", "id": hashlib.sha1(raw_id.encode("utf-8")).hexdigest()[:16],
+            "company": (r.get("company_name") or "").strip(), "title": (r.get("title") or "").strip(),
+            "location": location, "remote": remote, "posted": posted_time(ext.get("posted_at"), now),
+            "postedText": ext.get("posted_at", ""), "url": r.get("share_link") or link, "applyUrl": link or r.get("share_link", ""),
+            "salary": ext.get("salary", ""), "publisher": (r.get("via") or "").removeprefix("via ").strip() if not direct else site,
+            "direct": direct, "description": re.sub(r"\s+", " ", f'{r.get("description", "")} {highlights}').strip(),
+            "schedule": ext.get("schedule_type", "")}
 
 
 def load_state():
     month = dt.date.today().strftime("%Y-%m")
     st = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
     if st.get("month") != month:
-        st = {"month": month, "requests": {}}
+        st = {"month": month, "requests": {}, "cursor": st.get("cursor", {})}
     return st
 
 
@@ -98,271 +128,134 @@ def save_state(st):
     STATE.write_text(json.dumps(st, indent=2) + "\n", encoding="utf-8")
 
 
-class Budget:
-    """Per-round and per-month request limits for quota-limited APIs."""
-
-    def __init__(self, state, name, cfg):
-        self.state, self.name = state, name
-        self.round_left = int(cfg.get("maxRequestsPerRound", 3))
-        self.monthly = int(cfg.get("monthlyRequestBudget", 0)) or None
-        self.min_gap = float(cfg.get("minHoursBetweenRuns", 0))
-
-    def stop_reason(self):
-        if self.monthly and self.used >= self.monthly:
-            return f"monthly request budget used up ({self.used}/{self.monthly}) - no more requests until next month"
-        return "per-round request limit reached - the remaining searches run in the next rounds"
-
-    def too_soon(self):
-        last = parse_time(self.state.get("lastRun", {}).get(self.name))
-        return bool(last and self.min_gap and dt.datetime.now(UTC) - last < dt.timedelta(hours=self.min_gap))
-
-    def mark_run(self):
-        self.state.setdefault("lastRun", {})[self.name] = dt.datetime.now(UTC).isoformat()
-
-    def rotate(self, items):
-        """Items starting at the saved cursor, so successive rounds walk through all searches."""
-        cur = self.state.setdefault("cursor", {}).get(self.name, 0) % max(len(items), 1)
-        return items[cur:] + items[:cur]
-
-    def advance(self, n, total):
-        self.state.setdefault("cursor", {})[self.name] = (self.state["cursor"].get(self.name, 0) + n) % max(total, 1)
-
-    @property
-    def used(self):
-        return self.state["requests"].get(self.name, 0)
-
-    def take(self):
-        if self.round_left <= 0 or (self.monthly and self.used >= self.monthly):
-            return False
-        self.round_left -= 1
-        self.state["requests"][self.name] = self.used + 1
-        return True
-
-
-# ---------- sources ----------
-def fetch_greenhouse(slug):
-    d = http_json(f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs")
+def searches(sc):
+    """Every (query, location) pair, locations interleaved so each run covers several areas; 'remoteQueries' run
+    with location 'United States'."""
+    locs = sc.get("locations", []) + ["United States"] * bool(sc.get("remoteQueries"))
     out = []
-    for j in d.get("jobs", []):
-        loc = (j.get("location") or {}).get("name", "")
-        out.append(job("greenhouse", j.get("company_name") or slug, j.get("title"), loc, j.get("absolute_url"),
-                       parse_time(j.get("first_published")), remote="remote" in loc.lower(), job_id=j.get("id"),
-                       board=slug))  # description: fetched later for kept jobs only (add_descriptions)
-    return out
+    for i, q in enumerate(sc.get("queries", [])):
+        rq = sc.get("remoteQueries", [])
+        out += [(rq[i % len(rq)] if loc == "United States" else q, loc) for loc in locs]
+    return list(dict.fromkeys(out))  # each remote query once, not once per query
 
 
-def fetch_lever(slug):
-    d = http_json(f"https://api.lever.co/v0/postings/{slug}?mode=json")
-    out = []
-    for j in d:
-        cat = j.get("categories") or {}
-        loc = " / ".join(cat.get("allLocations") or [cat.get("location") or ""])
-        out.append(job("lever", slug, j.get("text"), loc, j.get("hostedUrl"), parse_time(j.get("createdAt")),
-                       apply_url=j.get("applyUrl"), remote=(j.get("workplaceType") == "remote" or "remote" in loc.lower()),
-                       job_id=j.get("id"), country=j.get("country") or "",
-                       description=j.get("descriptionPlain") or text_of(j.get("description"))))
-    return out
+def budget(sc, state):
+    """(requests allowed in this run, reason when 0) - maxRequestsPerRound, capped by maxRequestsPerDay and by an even
+    daily share of what is left of monthlyRequestBudget. Starts a new day in `state`."""
+    monthly = int(sc.get("monthlyRequestBudget", 0)) or None
+    cap = int(sc.get("maxRequestsPerDay", 0)) or None
+    used = state["requests"].get("serpapi", 0)
+    today = dt.date.today().isoformat()
+    if state.get("day", {}).get("date") != today:
+        state["day"] = {"date": today, "requests": 0, "startUsed": used}
+    left = int(sc.get("maxRequestsPerRound", 4))
+    daily = cap
+    if monthly:
+        left = min(left, monthly - used)
+        if left <= 0:
+            return 0, f"monthly request budget used up ({used}/{monthly}) - no more searches until next month"
+        # spread what is left of the month evenly: today's share = remaining at the start of today / days left
+        nxt = (dt.date.today().replace(day=28) + dt.timedelta(days=4)).replace(day=1)
+        share = max(1, -(-(monthly - state["day"]["startUsed"]) // (nxt - dt.date.today()).days))
+        daily = min(share, cap) if cap else share
+    if daily:
+        left = min(left, daily - state["day"]["requests"])
+        if left <= 0:
+            return 0, f"today's searches are used ({daily} requests/day) - more searches tomorrow"
+    return left, ""
 
 
-def fetch_ashby(slug):
-    d = http_json(f"https://api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true")
-    out = []
-    for j in d.get("jobs", []):
-        if j.get("isListed") is False:
-            continue
-        addr = ((j.get("address") or {}).get("postalAddress") or {})
-        locs = [j.get("location") or ""] + [s.get("location", "") for s in j.get("secondaryLocations") or []]
-        loc = " / ".join(x for x in locs if x)
-        comp = (j.get("compensation") or {}).get("compensationTierSummary") or ""
-        out.append(job("ashby", slug, j.get("title"), loc, j.get("jobUrl"), parse_time(j.get("publishedAt")),
-                       apply_url=j.get("applyUrl"),
-                       remote=bool(j.get("isRemote")) or j.get("workplaceType") == "Remote" or "remote" in loc.lower(),
-                       job_id=j.get("id"), salary=comp, country=addr.get("addressCountry", ""),
-                       description=j.get("descriptionPlain") or text_of(j.get("descriptionHtml"))))
-    return out
+def plan_info(sc, state):
+    """The searches (numbered from 1, as --search takes them), the next one in the rotation and today's budget - for the
+    job board's 'which search?' prompt."""
+    s = searches(sc)
+    left, why = budget(sc, state)
+    cur = state.get("cursor", {}).get("serpapi", 0) % max(len(s), 1)
+    return {"searches": [{"n": i, "query": q, "location": loc} for i, (q, loc) in enumerate(s, 1)],
+            "next": cur + 1 if s else None, "left": left, "blocked": why,
+            "today": state["day"]["requests"], "maxPerDay": int(sc.get("maxRequestsPerDay", 0)) or None,
+            "monthUsed": state["requests"].get("serpapi", 0), "monthly": int(sc.get("monthlyRequestBudget", 0)) or None}
 
 
-ATS_FETCHERS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby}
-
-
-def add_descriptions(jobs, log):
-    """Greenhouse's board list has no descriptions; fetch them for the (few) kept jobs only."""
-    todo = [j for j in jobs if not j["description"] and j["source"] == "greenhouse" and j["board"] and j["id"]]
-
-    def one(j):
-        d = http_json(f"https://boards-api.greenhouse.io/v1/boards/{j['board']}/jobs/{j['id']}")
-        j["description"] = text_of(d.get("content"))
-
-    with cf.ThreadPoolExecutor(8) as ex:
-        for f in [ex.submit(one, j) for j in todo]:
-            try:
-                f.result()
-            except Exception as e:  # a missing description must not stop the round
-                log(f"  ! description not loaded: {e}")
-
-
-def source_ats(cfg, budget_state, log):
-    boards = [(kind, slug) for kind in ATS_FETCHERS for slug in real_items(cfg.get(kind, []))]
-    jobs, errors = [], []
-    with cf.ThreadPoolExecutor(12) as ex:
-        futs = {ex.submit(ATS_FETCHERS[k], s): (k, s) for k, s in boards}
-        for f in cf.as_completed(futs):
-            try:
-                jobs += f.result()
-            except Exception as e:  # one dead board must not stop the round
-                errors.append(f"{futs[f][0]}/{futs[f][1]}: {e}")
-    log(f"ats: {len(boards)} company boards, {len(jobs)} postings" + (f", {len(errors)} errors" if errors else ""))
-    for e in errors:
-        log("  ! " + e)
-    return jobs
-
-
-def source_jsearch(cfg, state, log, env, hours):
-    key = env.get("JSEARCH_API_KEY")
-    if not key:
-        log("jsearch: skipped (no JSEARCH_API_KEY in private/.env)")
+# ---------- SerpApi ----------
+def fetch(sc, state, key, log, raw=None, only=None):
+    """Run the next searches within the round / day / month budget (only = run just that search, 0-based). Returns the
+    jobs (dicts from to_job); the untouched Google results of each search are appended to `raw`."""
+    now = dt.datetime.now(UTC)
+    all_searches = searches(sc)
+    if not all_searches:
+        log("serpapi: no searches configured (jobFeed.serpapi.queries / locations)")
         return []
-    budget = Budget(state, "jsearch", cfg)
-    if budget.too_soon():
-        log(f"jsearch: skipped (last run < {budget.min_gap:g}h ago, minHoursBetweenRuns)")
+    last = state.get("lastRun", {}).get("serpapi")
+    gap = float(sc.get("minHoursBetweenRuns", 0))
+    if only is None and last and gap and now - dt.datetime.fromisoformat(last) < dt.timedelta(hours=gap):
+        log(f"serpapi: skipped - last run less than {gap:g}h ago (jobFeed.serpapi.minHoursBetweenRuns)")
         return []
-    budget.mark_run()
-    if cfg.get("endpoint", "rapidapi") == "openwebninja":
-        base, headers = "https://api.openwebninja.com/jsearch/search", {"x-api-key": key}
+    left, why = budget(sc, state)
+    if left <= 0:
+        log(f"serpapi: {why}")
+        return []
+    cur = state.setdefault("cursor", {}).get("serpapi", 0) % len(all_searches)
+    if only is not None:  # the search the user picked on the job board; the rotation continues after it
+        cur = only % len(all_searches)
+        order = [all_searches[cur]]
     else:
-        base, headers = "https://jsearch.p.rapidapi.com/search", {"X-RapidAPI-Key": key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
-    date_posted = "today" if hours <= 24 else "3days" if hours <= 72 else "week"
-    jobs, queries, done = [], real_items(cfg.get("queries", [])), 0
-    for q in budget.rotate(queries):
-        if not budget.take():
-            log(f"jsearch: {budget.stop_reason()}")
-            break
-        params = {"query": q, "page": 1, "num_pages": cfg.get("numPages", 1), "country": cfg.get("country", "us"),
-                  "date_posted": date_posted}
-        if cfg.get("jobRequirements"):
-            params["job_requirements"] = cfg["jobRequirements"]
-        try:
-            d = http_json(base + "?" + urllib.parse.urlencode(params), headers)
-        except urllib.error.HTTPError as e:
-            log(f"jsearch: '{q}' -> HTTP {e.code} {e.reason}")
-            if e.code in (401, 403, 429):
-                break
-            continue
-        rows = d.get("data") or []
-        for j in rows:
-            # prefer a direct company apply option over job boards (LinkedIn Easy Apply etc.)
-            opts = j.get("apply_options") or []
-            direct = [o for o in opts if o.get("is_direct")]
-            apply = (direct[0]["apply_link"] if direct else j.get("job_apply_link"))
-            loc = ", ".join(x for x in (j.get("job_city"), j.get("job_state"), j.get("job_country")) if x)
-            sal = ""
-            if j.get("job_min_salary"):
-                sal = f'{j.get("job_min_salary")}-{j.get("job_max_salary")} {j.get("job_salary_period") or ""}'.strip()
-            jobs.append(job("jsearch", j.get("employer_name"), j.get("job_title"), loc or ("Remote" if j.get("job_is_remote") else ""),
-                            j.get("job_apply_link"), parse_time(j.get("job_posted_at_datetime_utc")), apply_url=apply,
-                            remote=j.get("job_is_remote"), job_id=j.get("job_id"), salary=sal,
-                            publisher=j.get("job_publisher") or "", direct=bool(direct) or bool(j.get("job_apply_is_direct")),
-                            country=j.get("job_country") or "", description=j.get("job_description") or ""))
-        log(f"jsearch: '{q}' -> {len(rows)} jobs")
-        done += 1
-    budget.advance(done, len(queries))
-    log(f"jsearch: {budget.used} requests used this month" + (f" of {budget.monthly}" if budget.monthly else ""))
-    return jobs
-
-
-def source_adzuna(cfg, state, log, env, hours):
-    app_id, app_key = env.get("ADZUNA_APP_ID"), env.get("ADZUNA_APP_KEY")
-    if not (app_id and app_key):
-        log("adzuna: skipped (no ADZUNA_APP_ID / ADZUNA_APP_KEY in private/.env)")
-        return []
-    budget = Budget(state, "adzuna", cfg)
-    if budget.too_soon():
-        log(f"adzuna: skipped (last run < {budget.min_gap:g}h ago, minHoursBetweenRuns)")
-        return []
-    budget.mark_run()
+        order = all_searches[cur:] + all_searches[:cur]
+    pages = max(1, int(sc.get("pagesPerSearch", 1)))
     jobs, done = [], 0
-    searches = [(q, w) for q in real_items(cfg.get("queries", [])) for w in (real_items(cfg.get("where") or []) or [""])]
-    for what, where in budget.rotate(searches):
-        if not budget.take():
-            log(f"adzuna: {budget.stop_reason()}")
+    for q, loc in order:
+        if left <= 0:
             break
-        params = {"app_id": app_id, "app_key": app_key, "what": what, "results_per_page": cfg.get("resultsPerPage", 50),
-                  "max_days_old": max(1, -(-hours // 24)), "sort_by": "date", "content-type": "application/json"}
-        if where:
-            params["where"] = where
-        try:
-            d = http_json(f"https://api.adzuna.com/v1/api/jobs/{cfg.get('country', 'us')}/search/1?" + urllib.parse.urlencode(params))
-        except urllib.error.HTTPError as e:
-            log(f"adzuna: '{what}' {where} -> HTTP {e.code} {e.reason}")
-            if e.code in (401, 403, 429):
+        params = {"engine": "google_jobs", "q": q, "location": loc, "hl": sc.get("hl", "en"), "gl": sc.get("gl", "us"),
+                  "api_key": key}
+        if sc.get("radiusKm"):
+            params["lrad"] = sc["radiusKm"]
+        for _ in range(pages):
+            if left <= 0:
                 break
-            continue
-        rows = d.get("results") or []
-        for j in rows:
-            sal = f'{int(j["salary_min"])}-{int(j.get("salary_max") or j["salary_min"])}' if j.get("salary_min") else ""
-            loc = (j.get("location") or {}).get("display_name", "")
-            jobs.append(job("adzuna", (j.get("company") or {}).get("display_name"), html.unescape(j.get("title", "")), loc,
-                            j.get("redirect_url"), parse_time(j.get("created")), remote="remote" in (j.get("title", "") + loc).lower(),
-                            job_id=j.get("id"), salary=sal, publisher="adzuna", direct=False, description=text_of(j.get("description")),
-                            country=cfg.get("country", "us")))
-        log(f"adzuna: '{what}' {where or '(anywhere)'} -> {len(rows)} jobs")
+            try:
+                data = http_json(SEARCH_URL + "?" + urllib.parse.urlencode(params))
+            except Exception as e:
+                log(f"serpapi: '{q}' in {loc}: {e}")
+                break
+            if data.get("error"):  # e.g. "Google hasn't returned any results for this query."
+                if "hasn't returned any results" not in data["error"]:
+                    log(f"serpapi: '{q}' in {loc}: {data['error']}")
+                break
+            # only successful searches count toward the daily / monthly budget
+            left -= 1
+            state["requests"]["serpapi"] = state["requests"].get("serpapi", 0) + 1
+            state["day"]["requests"] += 1
+            res = data.get("jobs_results", [])
+            if raw is not None:
+                raw.append({"query": q, "location": loc, "jobs_results": res})
+            jobs += [to_job(r, now) for r in res]
+            log(f"serpapi: '{q}' in {loc}: {len(res)} jobs")
+            token = (data.get("serpapi_pagination") or {}).get("next_page_token")
+            if not token:
+                break
+            params["next_page_token"] = token
         done += 1
-    budget.advance(done, len(searches))
-    log(f"adzuna: {budget.used} requests used this month" + (f" of {budget.monthly}" if budget.monthly else ""))
+    state["cursor"]["serpapi"] = (cur + done) % len(all_searches)
+    state.setdefault("lastRun", {})["serpapi"] = now.isoformat()
     return jobs
 
 
-# ---------- filtering ----------
-def compile_any(patterns):
-    return re.compile("|".join(f"(?:{p})" for p in patterns), re.I) if patterns else None
-
-
-def filter_jobs(jobs, fc, hours, skip_companies, logged, now):
-    title_in, title_out = compile_any(fc.get("titleInclude", [])), compile_any(fc.get("titleExclude", []))
-    loc_in = compile_any(fc.get("locationInclude", []))
-    non_us = compile_any(fc.get("remoteExcludeLocations", []))
-    us = {c.lower() for c in fc.get("remoteCountries", ["", "US", "USA", "United States"])}
-    vague = compile_any(fc.get("locationVague", []))
-    skip = [applog.norm(c) for c in skip_companies if c.strip()]
-    cutoff = now - dt.timedelta(hours=hours)
-
-    def check(j):
-        """Reason the job is filtered out, or None to keep it. May flag j["checkLocation"]."""
-        if j["posted"] is None:
-            if not fc.get("keepUndated", False):
-                return "no posted date"
-        elif j["posted"] < cutoff:
-            return "older than window"
-        if title_in and not title_in.search(j["title"]):
-            return "title not a target role"
-        if title_out and title_out.search(j["title"]):
-            return "title excluded (seniority/type)"
-        if j["country"].lower() not in us:  # e.g. "CA-Ontario-Toronto" would otherwise match the California pattern
-            return "outside the US"
-        remote_us = j["remote"] and not (non_us and non_us.search(j["location"]))
-        # multi-location posts ("Toronto, CA / San Mateo, CA"): one target-area location without a foreign name is enough
-        parts = re.split(r"\s*[;/|]\s*|\s+or\s+", j["location"])
-        in_area = any(loc_in and loc_in.search(p) and not (non_us and non_us.search(p)) for p in parts)
-        if not remote_us and not in_area:
-            if not (vague and vague.fullmatch(j["location"].strip())):
-                return "location not in target areas"
-            j["checkLocation"] = True  # board gives no city ("Hybrid", "In-Office"): keep, verify on the posting
-        company = applog.norm(j["company"])
-        if company and any(s in company or company in s for s in skip):
-            return "skip company"
-        if any(applog.matches(e, j["company"], j["title"], j["id"] or None) for e in logged):
-            return "already in applications.json"
-        return None
-
+# ---------- filters ----------
+def filter_jobs(jobs, ctx):
+    """(kept jobs, rejected jobs with "reason" = the first filter they fail) - the filters are in jobfilters.py."""
     keep, rejected, seen = [], [], set()
     for j in jobs:
         key = (applog.norm(j["company"]), applog.norm(j["title"]))
         if key in seen:
-            continue  # same job from two sources: keep the first (ats first = direct company link)
+            continue  # same job from two searches
         seen.add(key)
-        reason = check(j)
-        if reason:
-            rejected.append({**j, "reason": reason})
+        flags, extras = jobfilters.check(j, ctx, jobboard.job_key(j))
+        j["experience"] = extras["experience"]
+        if extras["checkLocation"]:
+            j["checkLocation"] = True  # no city given ("Hybrid", "United States"): keep, verify on the posting
+        if flags:
+            rejected.append({**j, "reason": jobfilters.reason(flags[0], j, ctx, extras)})
         else:
             keep.append(j)
     keep.sort(key=lambda j: j["posted"] or dt.datetime.min.replace(tzinfo=UTC), reverse=True)
@@ -380,10 +273,10 @@ def age(t, now):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--hours", type=float)
-    ap.add_argument("--source", action="append", choices=["ats", "jsearch", "adzuna"])
     ap.add_argument("--rejected", action="store_true")
     ap.add_argument("--plan", action="store_true")
-    ap.add_argument("--check-boards", action="store_true")
+    ap.add_argument("--json", action="store_true", help="with --plan: the plan as JSON (used by the job board)")
+    ap.add_argument("--search", type=int, help="run only this search (its number in --plan --json / the job board prompt)")
     a = ap.parse_args()
     for stream in (sys.stdout, sys.stderr):  # Windows consoles default to cp1252; titles contain dashes, emoji, ...
         stream.reconfigure(encoding="utf-8", errors="replace")
@@ -392,52 +285,57 @@ def main():
     fc = cfg.get("jobFeed")
     if not fc:
         sys.exit("No \"jobFeed\" section in private/job-search-config.json (template: examples/job-search-config.example.json).")
+    sc = fc.get("serpapi", {})
     env = {k: v for k, (v, _q) in applog.read_env(applog.ENV).items()} if applog.ENV.exists() else {}
+    key = env.get("SERPAPI_API_KEY") or os.environ.get("SERPAPI_API_KEY", "")
     hours = a.hours or fc.get("postedWithinHours") or cfg.get("postedWithinHours", 24)
-    sources = a.source or [s for s in ("ats", "jsearch", "adzuna") if (fc.get(s) or {}).get("enabled", False)]
+    exp_cfg = cfg.get("experienceYears", {})
+    max_years = exp_cfg.get("max", 2) if fc.get("experienceFilter", True) else None
     state = load_state()
     log = lambda m: print(m, file=sys.stderr)
 
-    if a.check_boards:
-        ats = fc.get("ats", {})
-        for kind, fetch in ATS_FETCHERS.items():
-            for slug in real_items(ats.get(kind, [])):
-                try:
-                    n = len(fetch(slug))
-                    print(f"{'OK ' if n else 'EMPTY'} {kind}/{slug}: {n} postings")
-                except Exception as e:
-                    print(f"BAD {kind}/{slug}: {e}")
+    if a.plan and a.json:
+        print(json.dumps(plan_info(sc, state)))
         return
-
     if a.plan:
-        print(f"window: last {hours}h | sources: {', '.join(sources) or 'none enabled'}")
-        ats = fc.get("ats", {})
-        print("ats boards:", ", ".join(f"{k}={len(ats.get(k, []))}" for k in ATS_FETCHERS))
-        for name, keys in (("jsearch", ["JSEARCH_API_KEY"]), ("adzuna", ["ADZUNA_APP_ID", "ADZUNA_APP_KEY"])):
-            c = fc.get(name, {})
-            has = all(env.get(k) for k in keys)
-            n = len(c.get("queries", [])) * (len(c.get("where") or [""]) if name == "adzuna" else 1)
-            print(f"{name}: {'enabled' if c.get('enabled') else 'disabled'}, key {'set' if has else 'MISSING'}, "
-                  f"{n} searches/round (max {c.get('maxRequestsPerRound', 3)}), "
-                  f"{state['requests'].get(name, 0)}/{c.get('monthlyRequestBudget', 'unlimited')} requests used in {state['month']}")
+        s = searches(sc)
+        print(f"window: last {hours:g}h | experience filter: {'max ' + str(max_years) + ' yrs' if max_years is not None else 'off'}")
+        print(f"serpapi: {'enabled' if sc.get('enabled', True) else 'disabled'}, key {'set' if key else 'MISSING (SERPAPI_API_KEY)'}, "
+              f"{len(s)} searches, up to {sc.get('maxRequestsPerRound', 4)} requests per run, "
+              f"{state.get('day', {}).get('requests', 0) if state.get('day', {}).get('date') == dt.date.today().isoformat() else 0}"
+              f"/{sc.get('maxRequestsPerDay') or 'no cap'} today, "
+              f"{state['requests'].get('serpapi', 0)}/{sc.get('monthlyRequestBudget', 'unlimited')} used in {state['month']}")
+        cur = state.get("cursor", {}).get("serpapi", 0) % max(len(s), 1)
+        for i, (q, loc) in enumerate(s[cur:] + s[:cur], 1):
+            print(f"  {i:>2}. {q} | {loc}")
+        if key:
+            try:
+                acc = http_json(ACCOUNT_URL + "?" + urllib.parse.urlencode({"api_key": key}))
+                print(f"SerpApi account: {acc.get('plan_name', '?')}, {acc.get('total_searches_left', '?')} searches left "
+                      f"this month ({acc.get('this_month_usage', '?')} used)")
+            except Exception as e:
+                print(f"SerpApi account check failed: {e}")
         return
 
-    jobs = []
-    if "ats" in sources:
-        jobs += source_ats(fc.get("ats", {}), state, log)
-    if "jsearch" in sources:
-        jobs += source_jsearch(fc.get("jsearch", {}), state, log, env, hours)
-    if "adzuna" in sources:
-        jobs += source_adzuna(fc.get("adzuna", {}), state, log, env, hours)
+    if not sc.get("enabled", True):
+        sys.exit("jobFeed.serpapi.enabled is false - no job API to fetch from (LinkedIn search: autoApplyLoop step 2b).")
+    if not key:
+        sys.exit("SERPAPI_API_KEY is missing in private/.env - get a key at serpapi.com (Dashboard -> API key).")
+    raw = []
+    if a.search is not None and not 1 <= a.search <= len(searches(sc)):
+        sys.exit(f"--search must be 1..{len(searches(sc))} (python jobfeed.py --plan --json lists them)")
+    jobs = fetch(sc, state, key, log, raw, None if a.search is None else a.search - 1)
     save_state(state)
+    if not raw:  # no search ran (budget used, error): keep the last results instead of overwriting them with nothing
+        sys.exit("No search ran - see the message above. The last results were kept.")
+    RAW.write_text(json.dumps({"fetchedAt": dt.datetime.now(UTC).isoformat(), "searches": raw}, indent=2, ensure_ascii=False)
+                   + "\n", encoding="utf-8")
 
     now = dt.datetime.now(UTC)
-    skip = env.get("SKIP_COMPANIES", "").split(",")
-    keep, rejected = filter_jobs(jobs, fc, hours, skip, applog.load()["jobs"], now)
     board = jobboard.load_board()
     skipped = {k for k, j in board["jobs"].items() if j.get("choice") == "skipped"}
-    rejected += [{**j, "reason": "skipped by the user on the job board"} for j in keep if jobboard.job_key(j) in skipped]
-    keep = [j for j in keep if jobboard.job_key(j) not in skipped]
+    ctx = jobfilters.context(cfg, env, skipped_keys=skipped, hours=hours, max_years=max_years, now=now)
+    keep, rejected = filter_jobs(jobs, ctx)
 
     if a.rejected:
         counts = {}
@@ -445,9 +343,8 @@ def main():
             counts[r["reason"]] = counts.get(r["reason"], 0) + 1
         print("Filtered out: " + ", ".join(f"{v} {k}" for k, v in sorted(counts.items(), key=lambda x: -x[1])))
         for r in rejected:
-            if r["reason"] not in ("older than window", "title not a target role"):
-                print(f'  - [{r["reason"]}] {r["company"]} | {r["title"]} | {r["location"]} | {r["url"]}')
-    add_descriptions(keep, log)
+            if not r["reason"].startswith(("older than", "title not a target role")):
+                print(f'  - [{r["reason"]}] {r["company"]} | {r["title"]} | {r["location"]} | {r["applyUrl"]}')
     if not keep:
         print(f"No new matching jobs posted in the last {hours:g}h ({len(jobs)} fetched). "
               "Run with --rejected to see why jobs were filtered out, or --hours 48 for a wider window.")
@@ -455,28 +352,31 @@ def main():
         print(f"{len(keep)} new matching jobs posted in the last {hours:g}h (of {len(jobs)} fetched):")
     for i, j in enumerate(keep, 1):
         flags = " ".join(x for x in ("REMOTE" if j["remote"] else "", "CHECK-LOCATION" if j.get("checkLocation") else "",
-                                     "" if j["direct"] else f"via {j['publisher'] or j['source']}") if x)
+                                     "" if j["direct"] else f"via {j['publisher'] or 'aggregator'}") if x)
         print(f'{i:>3}. [{age(j["posted"], now):>5}] {j["company"]} | {j["title"]} | {j["location"]}'
               f'{" | " + j["salary"] if j["salary"] else ""}{" | " + flags if flags else ""}\n'
               f'      {j["applyUrl"]}')
         if j["description"]:
             d = j["description"]
             print("      " + (d[:220] + "..." if len(d) > 220 else d))
-    for j in keep:  # full text for Claude to read; capped so the file stays small
+    # jobFeed.keepAll: every job Google returned goes on the board; the ones a filter would drop carry the reason
+    board_jobs = keep + ([{**{k: v for k, v in r.items() if k != "reason"}, "feedNote": r["reason"]} for r in rejected]
+                         if fc.get("keepAll", False) else [])
+    for j in board_jobs:  # full text for Claude to read; capped so the file stays small
         j["salary"] = jobinfo.salary_from(j["salary"]) or j["salary"] or jobinfo.salary_from(j["description"])
-        j["experience"] = jobinfo.experience_from(j["description"], j["title"])  # from the full text, before the cap
         j["description"] = j["description"][:6000]
         j["posted"] = j["posted"].isoformat() if j["posted"] else None
-    LATEST.write_text(json.dumps({"fetchedAt": now.isoformat(), "hours": hours, "jobs": keep},
+    LATEST.write_text(json.dumps({"fetchedAt": now.isoformat(), "hours": hours, "jobs": board_jobs},
                                  indent=2, default=str, ensure_ascii=False) + "\n", encoding="utf-8")
     with jobboard.LOCK:  # every new job also goes on the job board page for the user to pick from
         board = jobboard.load_board()
         added = jobboard.sync_latest(board)
         jobboard.prune(board, applog.load()["jobs"])
         jobboard.save_board(board)
-    if keep:
-        print(f"Job board: {added} added, {len(keep) - added} already listed - the user picks what to apply to "
-              f"(python jobboard.py queue).")
+    if board_jobs:
+        print(f"Job board: {added} added, {len(board_jobs) - added} already listed"
+              f"{f' ({len(board_jobs) - len(keep)} marked with the filter that would drop them)' if len(board_jobs) > len(keep) else ''}"
+              f" - the user picks what to apply to (python jobboard.py queue).")
 
 
 if __name__ == "__main__":

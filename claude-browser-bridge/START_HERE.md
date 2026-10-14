@@ -45,6 +45,7 @@ Prerequisites: [Node.js](https://nodejs.org) 20+, Google Chrome, Claude Code (`c
    | ▶ | Claude is controlling a tab right now |
    | (blank) | Not connected — make sure `claude` is running; wait up to 30 s |
    | ! | No token saved — redo setup step 3 |
+   **Which tabs are Claude's:** every tab Claude opens or works in goes into an orange **Claude** tab group and gets an orange frame with a "Claude is controlling this tab" label (it does not block clicks). Turn it off in the extension popup: *Highlight tabs Claude controls*.
 4. **Tell Claude what to do**, e.g. `continue my job search` or `use browser-bridge to fill this application: <url>`.
 5. **Stop anytime:** extension icon → **Stop**, or exit Claude Code (`/exit` or Ctrl+C).
 

@@ -6,11 +6,12 @@ const DEFAULT_SITES = [
 const $ = (id) => document.getElementById(id);
 
 async function load() {
-  const cfg = await chrome.storage.local.get(["token", "port", "allowedSites", "allowAllSites", "enabled", "status"]);
+  const cfg = await chrome.storage.local.get(["token", "port", "allowedSites", "allowAllSites", "highlightTabs", "enabled", "status"]);
   $("token").value = cfg.token ?? "";
   $("port").value = cfg.port ?? 8765;
   $("sites").value = (cfg.allowedSites ?? DEFAULT_SITES).join("\n");
   $("allowAll").checked = !!cfg.allowAllSites;
+  $("highlight").checked = cfg.highlightTabs !== false;
   showStatus(cfg.enabled === false ? "stopped" : cfg.status);
 }
 
@@ -32,6 +33,7 @@ $("save").onclick = async () => {
     port: Number($("port").value) || 8765,
     allowedSites: sites,
     allowAllSites: $("allowAll").checked,
+    highlightTabs: $("highlight").checked,
     enabled: true
   });
   chrome.runtime.sendMessage({ type: "reconnect" });

@@ -1,6 +1,8 @@
 # Your real data (contact info, answer bank, bridge token, config, resume, application log).
 # Public templates of every file in here live in examples/.
-private/
+# The folder itself is in the repo (private/.gitkeep) so a fresh clone has it; everything else in it stays local.
+private/*
+!private/.gitkeep
 private/.env
 private/job-search-config.json
 private/resume.json

@@ -7,6 +7,7 @@ const DEFAULTS = {
   port: 8765,
   enabled: true,
   allowAllSites: false,
+  highlightTabs: true,
   allowedSites: [
     "linkedin.com",
     "greenhouse.io",
@@ -79,7 +80,11 @@ async function connect() {
     if (msg.type === "pong" || msg.id === undefined) return;
     setBadge("busy");
     try {
+      // Mouse / keyboard input only lands reliably in the active tab: bring Claude's tab to the front first.
+      if (INPUT_CMDS.has(msg.cmd) && msg.args?.tabId !== undefined) await bringToFront(msg.args.tabId);
       const result = await handleCommand(msg.cmd, msg.args ?? {});
+      const touched = msg.cmd === "open_tab" ? result?.tabId : msg.cmd === "close_tab" || msg.cmd === "list_tabs" ? undefined : msg.args?.tabId;
+      if (touched !== undefined) markClaudeTab(touched);
       ws?.send(JSON.stringify({ id: msg.id, ok: true, result }));
     } catch (err) {
       ws?.send(JSON.stringify({ id: msg.id, ok: false, error: String(err?.message ?? err) }));
@@ -127,11 +132,113 @@ chrome.storage.onChanged.addListener(async (changes) => {
   }
 });
 chrome.debugger.onDetach.addListener((source) => attachedTabs.delete(source.tabId));
-chrome.tabs.onRemoved.addListener((tabId) => attachedTabs.delete(tabId));
+chrome.tabs.onRemoved.addListener((tabId) => {
+  attachedTabs.delete(tabId);
+  forgetClaudeTab(tabId);
+});
 connect();
+
+// ---------- "Claude is controlling this tab" highlight ----------
+// Every tab Claude opens or acts on goes into an orange "Claude" tab group and gets an orange frame + label on the
+// page (pointer-events: none, in a closed shadow root so it is not part of the page text Claude reads).
+// Option: highlightTabs (default on). Local pages (the job board) are left alone.
+const GROUP_TITLE = "Claude";
+const GROUP_COLOR = "orange";
+
+async function claudeTabs() {
+  const { claudeTabIds = [] } = await chrome.storage.session.get("claudeTabIds");
+  return new Set(claudeTabIds);
+}
+
+async function forgetClaudeTab(tabId) {
+  const ids = await claudeTabs();
+  if (ids.delete(tabId)) await chrome.storage.session.set({ claudeTabIds: [...ids] });
+}
+
+function isLocal(url) {
+  try {
+    return ["127.0.0.1", "localhost"].includes(new URL(url).hostname);
+  } catch {
+    return true; // chrome://, about:blank, ...
+  }
+}
+
+async function groupTab(tab) {
+  if (tab.groupId !== undefined && tab.groupId !== -1) {
+    try {
+      const g = await chrome.tabGroups.get(tab.groupId);
+      if (g.title === GROUP_TITLE) return;
+    } catch {}
+    return; // the user's own group: leave it
+  }
+  const [existing] = await chrome.tabGroups.query({ windowId: tab.windowId, title: GROUP_TITLE });
+  const groupId = await chrome.tabs.group(existing ? { groupId: existing.id, tabIds: [tab.id] } : { tabIds: [tab.id] });
+  if (!existing) await chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: GROUP_COLOR, collapsed: false });
+}
+
+function pageOverlay() {
+  if (document.getElementById("__cbb_claude_frame")) return;
+  const host = document.createElement("div");
+  host.id = "__cbb_claude_frame";
+  host.style.cssText = "all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483647";
+  const root = host.attachShadow({ mode: "closed" });
+  root.innerHTML = `<style>
+      .f{position:fixed;inset:0;border:4px solid #f97316;box-sizing:border-box;pointer-events:none}
+      .l{position:fixed;right:10px;bottom:10px;background:#f97316;color:#fff;font:600 12px/1.2 system-ui,sans-serif;
+         padding:5px 9px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.3);pointer-events:none;opacity:.92}
+    </style><div class="f"></div><div class="l">Claude is controlling this tab</div>`;
+  (document.documentElement || document.body).appendChild(host);
+}
+
+async function showOverlay(tabId) {
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, func: pageOverlay });
+  } catch {} // chrome:// pages, closed tabs, ...
+}
+
+async function markClaudeTab(tabId) {
+  const cfg = await getConfig();
+  if (!cfg.highlightTabs || tabId === undefined) return;
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return;
+  }
+  if (isLocal(tab.url || tab.pendingUrl || "")) return;
+  const ids = await claudeTabs();
+  if (!ids.has(tabId)) {
+    ids.add(tabId);
+    await chrome.storage.session.set({ claudeTabIds: [...ids] });
+  }
+  try {
+    await groupTab(tab);
+  } catch {}
+  await showOverlay(tabId);
+}
+
+// Pages reload / navigate: put the frame back on Claude's tabs.
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (info.status !== "complete") return;
+  if (!(await claudeTabs()).has(tabId)) return;
+  if (!(await getConfig()).highlightTabs || isLocal(tab.url || "")) return;
+  showOverlay(tabId);
+});
 
 // ---------- helpers ----------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const INPUT_CMDS = new Set(["click", "type", "press_key", "select_option", "set_checked"]);
+
+async function bringToFront(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.active) {
+      await chrome.tabs.update(tabId, { active: true });
+      await sleep(150);
+    }
+  } catch {} // the command itself reports a missing tab
+}
 
 async function assertAllowed(urlString) {
   const cfg = await getConfig();

@@ -1,9 +1,11 @@
-"""Job board - a local web page to review the job posts from jobfeed.py and pick which ones to apply to.
+"""Job board - a local web page where the user asks Claude for job candidates and approves the ones to apply to.
 
-While it runs, the server fetches new jobs (jobfeed.py) every jobBoard.fetchEveryHours hours and when the user clicks
-Refresh jobs; every job found is added to ../private/job-board.json. The page lists them; the user selects jobs
-(and orders them) or skips them. Claude applies only to the selected jobs (autoApplyLoop steps 2s / 2q), in order,
-and logs each one in applications.json - the page shows that log status.
+The page has a "Search Google Jobs" and a "Search LinkedIn" button: a click saves a search request in
+../private/job-board.json and the queue watcher (python jobboard.py watch, run by Claude's session as a Monitor) prints
+it; Claude then searches in a new Chrome tab, picks about 10 candidates (autoApplyLoop step 2g) and adds them with
+`python jobboard.py add <file.json> --search <id>`. The user approves jobs by putting them in the apply queue (in
+order) or skips them. Claude applies only to the queued jobs (autoApplyLoop steps 2s / 2q), in order, and logs each one
+in applications.json - the page shows that log status.
 
 Usage (from the JobSearch folder):
   python jobboard.py                  -> start the page at http://127.0.0.1:<jobBoard.port> (default 8766) and open it
@@ -11,25 +13,36 @@ Usage (from the JobSearch folder):
   python jobboard.py queue            -> selected jobs still to apply to, in the user's order (exit 1 if none)
   python jobboard.py queue --quiet    -> one line for the queue watcher: "<n> jobs in the apply queue" (exit 0) / "apply queue empty" (exit 1)
   python jobboard.py applying <key>   -> mark a queued job as being applied to now (shown on the page)
-  python jobboard.py watch            -> queue watcher for a Claude Monitor: prints one line each time jobs are added to the
-                                         apply queue (seconds after "Add to apply queue" is clicked; full check every
+  python jobboard.py watch            -> watcher for a Claude Monitor: prints one line each time jobs are added to the
+                                         apply queue or a search button is clicked (within ~2 seconds; full check every
                                          jobBoard.queueCheckSeconds, default 30). Runs until stopped.
-  python jobboard.py sync             -> add the jobs from ../private/jobfeed-latest.json to the board
+  python jobboard.py searches [--all] -> search requests not finished yet (exit 1 if none); --all = also earlier ones
+  python jobboard.py search <id> running|done|failed [--note TEXT]
+                                      -> report a search request's progress (shown on the page)
+  python jobboard.py add <file.json> [--search <id>]
+                                      -> add the candidates Claude found to the board: a JSON list of {source, id, company,
+                                         title, location, workMode, url, applyUrl, posted, salary, description, ...};
+                                         --search marks that search request done with the number found
+  python jobboard.py sync             -> add the jobs from ../private/jobfeed-latest.json (manual jobfeed.py run) to the board
+  python jobboard.py profile running|done|failed [--note TEXT]
+                                      -> report the "Update my answers" resume request (autoApplyLoop step 2u) on the page
 
 Job status on the page: new, selected, applying (from this file) or the applications.json status once logged
 (Submitted, Needs User, Needs approval, Skipped, ...); skipped = the user skipped it on the page.
 """
 import argparse
+import base64
 import datetime as dt
 import json
-import subprocess
 import sys
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import answerbank  # same folder: the .env answer bank as a question list ("Update my answers")
 import applog  # same folder: log helpers
+import jobfilters  # same folder: the search filters as named checks (checkboxes on the page)
 import jobinfo  # same folder: salary / experience from the job text
 
 HERE = Path(__file__).resolve().parent
@@ -39,7 +52,6 @@ LATEST = PRIVATE / "jobfeed-latest.json"
 CONFIG = PRIVATE / "job-search-config.json"
 PAGE = HERE / "jobboard.html"
 LOCK = threading.Lock()          # board file read-modify-write
-REFRESH_LOCK = threading.Lock()  # one jobfeed.py run at a time
 
 
 # ---------- board file ----------
@@ -112,6 +124,8 @@ def log_entry(j, log_jobs):
 
 def status(j, log_jobs):
     e = log_entry(j, log_jobs)
+    if e and e["status"] == APPROVED and j.get("choice") == "selected":
+        return ("applying" if j.get("applyingAt") else "selected"), e
     if e:
         return e["status"], e
     if j.get("choice") == "skipped":
@@ -126,7 +140,7 @@ def card_facts(j):
     desc = j.get("description") or ""
     salary = jobinfo.salary_from(j.get("salary") or "") or j.get("salary") or jobinfo.salary_from(desc)
     exp = j.get("experience") or jobinfo.experience_from(desc, j.get("title", ""))
-    return {"salary": salary, "experience": exp}
+    return {"salary": salary, "experience": exp, "workMode": j.get("workMode") or jobinfo.work_mode(j)}
 
 
 def experience_limits():
@@ -141,34 +155,35 @@ def experience_limits():
 def view(board):
     """Jobs for the page: board entries + their current status from applications.json."""
     log_jobs = applog.load()["jobs"]
+    try:
+        ctx = jobfilters.context(log_jobs=log_jobs)
+    except (OSError, ValueError):
+        ctx = None
     out = []
     for j in board["jobs"].values():
         st, e = status(j, log_jobs)
-        out.append({**j, **card_facts(j), "status": st, "logNotes": (e or {}).get("notes", ""),
-                    "logUrl": (e or {}).get("url", ""), "logDate": (e or {}).get("date", "")})
+        facts = card_facts(j)
+        flags = [f for f in jobfilters.check({**j, **facts}, ctx)[0] if f not in jobfilters.STATUS_FILTERS] if ctx else []
+        pay = jobinfo.salary_annual(facts["salary"])
+        out.append({**j, **facts, "status": st, "logNotes": (e or {}).get("notes", ""),
+                    "logUrl": (e or {}).get("url", ""), "logDate": (e or {}).get("date", ""),
+                    "flags": flags, "areas": jobfilters.areas(j, ctx) if ctx else [],
+                    "payMin": pay[0] if pay else None, "payMax": pay[1] if pay else None})
     cfg = config()
-    fetched = last_fetch()
-    every = float(cfg.get("fetchEveryHours", 2))
-    meta = {"fetchedAt": fetched.isoformat() if fetched else None, "fetchEveryHours": every,
-            "nextFetchAt": ((fetched or dt.datetime.now(dt.timezone.utc)) + dt.timedelta(hours=every)).isoformat()
-            if every and FETCHER["running"] else None,
-            "fetching": REFRESH_LOCK.locked(), "lastFetchError": FETCHER["error"]}
-    return {"jobs": out, **meta, "requireSelection": cfg.get("requireSelection", True),
+    meta = {"searchRequests": board.get("searches", [])[-5:],
+            "profileRequest": (board.get("profileRequests") or [None])[-1]}
+    filters = [{"id": f, "label": label, "rule": rule} for f, label, rule in jobfilters.FILTERS
+               if f not in jobfilters.STATUS_FILTERS]
+    areas = [name for name, _rx in ctx["areas"]] if ctx else []
+    return {"jobs": out, **meta, "filters": filters, "areas": areas, "requireSelection": cfg.get("requireSelection", True),
             "queueCheckSeconds": cfg.get("queueCheckSeconds", 30), "experienceYears": experience_limits()}
 
 
-def last_fetch():
-    """When jobfeed.py last ran (by the page, the timer or by hand)."""
-    try:
-        return dt.datetime.fromisoformat(json.loads(LATEST.read_text(encoding="utf-8"))["fetchedAt"])
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
-
-
 def queue(board):
-    """Selected jobs not logged yet, in the user's order."""
+    """Selected jobs not logged yet (or logged as Approved: the user said apply anyway), in the user's order."""
     log_jobs = applog.load()["jobs"]
-    sel = [j for j in board["jobs"].values() if j.get("choice") == "selected" and not log_entry(j, log_jobs)]
+    sel = [j for j in board["jobs"].values() if j.get("choice") == "selected"
+           and (lambda e: e is None or e["status"] == APPROVED)(log_entry(j, log_jobs))]
     return sorted(sel, key=lambda j: (j.get("order") is None, j.get("order") or 0, j.get("choiceAt") or ""))
 
 
@@ -193,49 +208,120 @@ def reorder(board, keys):
             board["jobs"][k]["order"] = i
 
 
-def run_jobfeed():
-    """Run jobfeed.py (it also adds its results to the board). Returns (ok, output)."""
-    if not REFRESH_LOCK.acquire(blocking=False):
-        return False, "A refresh is already running."
-    try:
-        r = subprocess.run([sys.executable, str(HERE / "jobfeed.py")], cwd=HERE, capture_output=True,
-                           text=True, encoding="utf-8", errors="replace", timeout=600)
-        out = (r.stderr + r.stdout).strip()
-        return r.returncode == 0, out[-4000:]
-    except subprocess.TimeoutExpired:
-        return False, "jobfeed.py did not finish within 10 minutes."
-    finally:
-        REFRESH_LOCK.release()
+# ---------- search requests (the page's search buttons; Claude does the search in Chrome) ----------
+SEARCH_SOURCES = {"google": "Google Jobs", "linkedin": "LinkedIn"}
+OPEN_SEARCH = ("requested", "running")
 
 
-def fetch_and_sync():
-    """Run the job feed and put its jobs on the board. Used by Refresh jobs and the automatic timer."""
-    ok, out = run_jobfeed()
-    FETCHER["error"] = None if ok else (out.splitlines() or ["job feed failed"])[-1]
-    with LOCK:
-        board = load_board()
-        sync_latest(board)
-        prune(board, applog.load()["jobs"])
-        save_board(board)
-    return ok, out, board
+def request_search(board, source):
+    """Add a search request, unless one for the same source is still open."""
+    reqs = board.setdefault("searches", [])
+    if any(r["source"] == source and r["status"] in OPEN_SEARCH for r in reqs):
+        return None
+    r = {"id": f"s{len(reqs) + 1}", "source": source, "status": "requested", "requestedAt": now_iso(), "note": ""}
+    reqs.append(r)
+    del reqs[:-50]  # keep the last 50
+    return r
 
 
-FETCHER = {"running": False, "error": None}
+def set_search(board, sid, status, note=None, found=None):
+    r = next((r for r in board.get("searches", []) if r["id"] == sid), None)
+    if r is None:
+        sys.exit(f"no search request {sid}")
+    r["status"] = status
+    r[f"{status}At"] = now_iso()
+    if note is not None:
+        r["note"] = note
+    if found is not None:
+        r["found"] = found
+    return r
 
 
-def auto_fetch():
-    """Background timer: fetch new jobs every jobBoard.fetchEveryHours (re-read each minute; 0 = only on Refresh)."""
-    FETCHER["running"] = True
-    while True:
-        every = float(config().get("fetchEveryHours", 2))
-        last = last_fetch()
-        due = every > 0 and (last is None or dt.datetime.now(dt.timezone.utc) - last >= dt.timedelta(hours=every))
-        if due and not REFRESH_LOCK.locked():
-            try:
-                fetch_and_sync()
-            except Exception as e:  # never let the timer die
-                FETCHER["error"] = str(e)
-        threading.Event().wait(60)
+# ---------- "Mark as submitted" on jobs waiting on the user ----------
+WAITING = {"Needs User", "Needs approval", "Pending", "Candidate"}
+
+
+APPROVED = "Approved"
+WAITING_ACTIONS = {  # action -> (new applications.json status, note, statuses it applies to)
+    "submitted": ("Submitted", "Marked submitted by the user on the job board", WAITING | {APPROVED}),
+    "skipped": ("Skipped", "Skipped by the user on the job board", WAITING | {APPROVED}),
+    "approve": (APPROVED, "Approved by the user on the job board - apply anyway", WAITING - {"Needs User"} | {APPROVED}),
+}
+
+
+def waiting_action(board, key, action):
+    """A job waiting on the user: mark it submitted (the user finished it), skip it, or approve it (back in the apply
+    queue, applied to even though it failed a rule). Returns an error text, or None."""
+    if action not in WAITING_ACTIONS:
+        return "unknown action"
+    new, text, allowed = WAITING_ACTIONS[action]
+    j = board["jobs"].get(key)
+    if j is None:
+        return "job not on the board"
+    data = applog.load()
+    e = log_entry(j, data["jobs"])
+    if e is None or e.get("status") not in allowed:
+        return f"this action is only for jobs that are {' / '.join(sorted(allowed))}"
+    if action == "approve" and e["status"] == APPROVED and j.get("choice") == "selected":
+        return None  # already approved and in the apply queue
+    today = dt.date.today().isoformat()
+    e.update({"status": new, "date": today, "url": e.get("url") or j.get("applyUrl") or j.get("url") or "",
+              "notes": f'{e.get("notes", "")} | {text} {today} (was {e["status"]}).'.strip(" |")})
+    if j.get("id"):
+        e["ids"] = sorted(set(e.get("ids", [])) | {j["id"]})
+    applog.save(data)
+    if action == "approve":  # to the end of the queue, as a fresh pick
+        j.pop("applyingAt", None)
+        j["choice"] = "new"
+    set_choice(board, [key], "selected" if action == "approve" else "skipped" if action == "skipped" else j.get("choice", "new"))
+    save_board(board)
+    return None
+
+
+# ---------- "Update my answers": resume upload -> Claude reads it and fills the answer bank (autoApplyLoop 2u) ----------
+UPLOADS = PRIVATE / "uploads"
+RESUME_TYPES = {".pdf", ".docx", ".doc", ".txt"}
+MAX_RESUME = 5 * 1024 * 1024
+
+
+def save_resume(name, data_b64):
+    """Store an uploaded resume in ../private/uploads/ and return its path (ValueError if not acceptable)."""
+    ext = Path(name or "").suffix.lower()
+    if ext not in RESUME_TYPES:
+        raise ValueError("upload a PDF, DOCX, DOC or TXT resume")
+    data = base64.b64decode(data_b64 or "", validate=True)
+    if not data or len(data) > MAX_RESUME:
+        raise ValueError("the resume must be between 1 byte and 5 MB")
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+    stem = "".join(c if c.isalnum() or c in "-_" else "_" for c in Path(name).stem)[:60] or "resume"
+    path = UPLOADS / f"{dt.datetime.now():%Y%m%d-%H%M%S}-{stem}{ext}"
+    path.write_bytes(data)
+    return path
+
+
+def request_profile(board, path):
+    reqs = board.setdefault("profileRequests", [])
+    r = {"id": f"p{len(reqs) + 1}", "status": "requested", "file": str(path), "requestedAt": now_iso(), "note": ""}
+    reqs.append(r)
+    del reqs[:-20]
+    return r
+
+
+def set_profile(board, status, note=None):
+    reqs = board.get("profileRequests", [])
+    if not reqs:
+        sys.exit("no profile request")
+    r = reqs[-1]
+    r["status"] = status
+    r[f"{status}At"] = now_iso()
+    if note is not None:
+        r["note"] = note
+    return r
+
+
+def local_request(handler):
+    """Requests must come from this page's own host (blocks DNS-rebinding reads of the answer bank)."""
+    return handler.headers.get("Host", "").split(":")[0] in ("127.0.0.1", "localhost")
 
 
 # ---------- web server ----------
@@ -266,9 +352,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/jobs":
             with LOCK:
                 board = load_board()
-                if sync_latest(board):
-                    save_board(board)
             return self.send(200, view(board))
+        if self.path == "/api/answers":
+            if not local_request(self):
+                return self.send(403, {"error": "forbidden"})
+            return self.send(200, {"questions": answerbank.questions()})
         self.send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -292,9 +380,34 @@ class Handler(BaseHTTPRequestHandler):
                 reorder(board, body.get("keys", []))
                 save_board(board)
             return self.send(200, view(board))
-        if self.path == "/api/refresh":
-            ok, out, board = fetch_and_sync()
-            return self.send(200, {"ok": ok, "output": out, **view(board)})
+        if self.path == "/api/resume":
+            try:
+                path = save_resume(body.get("name"), body.get("data"))
+            except ValueError as e:
+                return self.send(400, {"error": str(e)})
+            with LOCK:
+                board = load_board()
+                request_profile(board, path)
+                save_board(board)
+            return self.send(200, view(board))
+        if self.path == "/api/waiting":
+            with LOCK:
+                board = load_board()
+                err = waiting_action(board, body.get("key", ""), body.get("action", ""))
+            if err:
+                return self.send(400, {"error": err})
+            return self.send(200, view(board))
+        if self.path == "/api/answers":
+            n = answerbank.save(body.get("answers") or {})
+            return self.send(200, {"saved": n, "questions": answerbank.questions()})
+        if self.path == "/api/search":
+            if body.get("source") not in SEARCH_SOURCES:
+                return self.send(400, {"error": "source must be " + " or ".join(SEARCH_SOURCES)})
+            with LOCK:
+                board = load_board()
+                request_search(board, body["source"])
+                save_board(board)
+            return self.send(200, view(board))
         self.send(404, {"error": "not found"})
 
 
@@ -309,7 +422,6 @@ def serve(open_browser=True):
             webbrowser.open(url)
         return
     print(f"Job board: {url}  (Ctrl+C to stop)")
-    threading.Thread(target=auto_fetch, daemon=True).start()
     if open_browser:
         threading.Timer(0.5, webbrowser.open, [url]).start()
     try:
@@ -319,14 +431,31 @@ def serve(open_browser=True):
 
 
 def watch():
-    """Print a line whenever jobs enter the apply queue: on every board save (a click on the page) and every queueCheckSeconds."""
+    """Print a line whenever jobs enter the apply queue or a search button is clicked: on every board save (a click on
+    the page) and every queueCheckSeconds."""
+    import importlib
     import time
     every = float(config().get("queueCheckSeconds", 30))
+    # the watcher runs for hours: use the current jobboard.py / applog.py code (reloaded when the files change), so
+    # changes to what counts as "queued" apply without restarting it
+    code = {"mod": None, "stamp": None}
+
+    def current():
+        stamp = tuple(f.stat().st_mtime for f in (Path(__file__), HERE / "applog.py"))
+        if stamp != code["stamp"]:
+            import jobboard as fresh
+            importlib.reload(applog)
+            code["mod"], code["stamp"] = importlib.reload(fresh), stamp
+        return code["mod"]
 
     def keys():
+        """(queued job keys, open search requests) or None if the board can't be read right now."""
         try:
+            m = current()
             with LOCK:
-                return [j["key"] for j in queue(load_board())]
+                board = m.load_board()
+            return ([j["key"] for j in m.queue(board)],
+                    [r for r in board.get("searches", []) + board.get("profileRequests", []) if r["status"] == "requested"])
         except (OSError, ValueError):
             return None
 
@@ -336,9 +465,20 @@ def watch():
         except OSError:
             return None
 
-    seen = set(keys() or [])
+    def announce(reqs):
+        for r in reqs:
+            if "file" in r:
+                print(f"profile request {r['id']}: new resume {r['file']} - read it and fill the answer bank "
+                      f"(autoApplyLoop step 2u)", flush=True)
+            else:
+                print(f"search request {r['id']}: {r['source']} - search {SEARCH_SOURCES[r['source']]} in Chrome "
+                      f"(autoApplyLoop step 2g)", flush=True)
+
+    first = keys() or ([], [])
+    seen, seen_req = set(first[0]), {r["id"] for r in first[1]}
     if seen:
         print(f"{len(seen)} job{'' if len(seen) == 1 else 's'} in the apply queue: {' '.join(sorted(seen))}", flush=True)
+    announce(first[1])
     last_m, last_check = mtime(), time.monotonic()
     while True:
         time.sleep(2)
@@ -346,13 +486,15 @@ def watch():
         if m == last_m and time.monotonic() - last_check < every:
             continue
         last_m, last_check = m, time.monotonic()
-        cur = keys()
-        if cur is None:
+        got = keys()
+        if got is None:
             continue
+        cur, reqs = got
         new = [k for k in cur if k not in seen]
         if new:
             print(f"new in apply queue ({len(cur)} queued): {' '.join(new)}", flush=True)
-        seen = set(cur)
+        announce([r for r in reqs if r["id"] not in seen_req])
+        seen, seen_req = set(cur), seen_req | {r["id"] for r in reqs}
 
 
 def main():
@@ -368,6 +510,18 @@ def main():
     ap_ = sub.add_parser("applying")
     ap_.add_argument("key")
     sub.add_parser("sync")
+    addp = sub.add_parser("add")
+    addp.add_argument("file")
+    addp.add_argument("--search", help="search request id this run answers (marked done)")
+    srp = sub.add_parser("searches")
+    srp.add_argument("--all", action="store_true", help="also finished requests, with their notes")
+    pp = sub.add_parser("profile")
+    pp.add_argument("status", choices=["running", "done", "failed"])
+    pp.add_argument("--note")
+    sp = sub.add_parser("search")
+    sp.add_argument("id")
+    sp.add_argument("status", choices=["running", "done", "failed"])
+    sp.add_argument("--note")
     sub.add_parser("watch")
     a = ap.parse_args()
 
@@ -385,6 +539,34 @@ def main():
             n = sync_latest(board)
             save_board(board)
             print(f"{n} new jobs added to the board ({len(board['jobs'])} total)")
+        elif a.cmd == "add":
+            jobs = json.loads(Path(a.file).read_text(encoding="utf-8"))
+            jobs = jobs.get("jobs", []) if isinstance(jobs, dict) else jobs
+            for j in jobs:
+                j.setdefault("source", "linkedin")
+                j.setdefault("applyUrl", j.get("url"))
+            n = merge(board, jobs)
+            prune(board, applog.load()["jobs"])
+            if a.search:
+                set_search(board, a.search, "done", found=n)
+            save_board(board)
+            print(f"{n} new jobs added to the board ({len(board['jobs'])} total)")
+        elif a.cmd == "searches":
+            open_reqs = [r for r in board.get("searches", []) if r["status"] in OPEN_SEARCH]
+            for r in (board.get("searches", []) if a.all else open_reqs):
+                print(f"{r['id']}  {r['source']:<8} {r['status']:<9} requested {r['requestedAt']}"
+                      f"{'  found ' + str(r['found']) if 'found' in r else ''}{'  - ' + r['note'] if r.get('note') else ''}")
+            if not open_reqs:
+                print("no open search requests")
+                sys.exit(1)
+        elif a.cmd == "profile":
+            r = set_profile(board, a.status, a.note)
+            save_board(board)
+            print(f"{r['id']} profile: {r['status']}")
+        elif a.cmd == "search":
+            r = set_search(board, a.id, a.status, a.note)
+            save_board(board)
+            print(f"{r['id']} {r['source']}: {r['status']}")
         elif a.cmd == "queue":
             q = queue(board)
             if a.quiet:  # queue watcher: one line, exit code says whether there is work
@@ -395,10 +577,14 @@ def main():
                 print(f"No selected jobs waiting. {waiting} new jobs are on the board for the user to review.")
                 sys.exit(1)
             print(f"{len(q)} selected jobs to apply to, in the user's order:")
+            log_jobs = applog.load()["jobs"]
             for i, j in enumerate(q, 1):
+                e = log_entry(j, log_jobs)
                 print(f'{i:>3}. {j["company"]} | {j["title"]} | {j.get("location", "")}'
                       f'{" | APPLYING" if j.get("applyingAt") else ""}\n'
-                      f'      key: {j["key"]}  id: {j.get("id") or "-"}\n      {j.get("applyUrl") or j.get("url")}')
+                      f'      key: {j["key"]}  id: {j.get("id") or "-"}\n      {(e or {}).get("url") or j.get("applyUrl") or j.get("url")}')
+                if e:  # status Approved
+                    print(f'      APPROVED BY THE USER - apply even though it failed a rule earlier: {e.get("notes", "")}')
         elif a.cmd == "applying":
             j = board["jobs"].get(a.key)
             if not j:

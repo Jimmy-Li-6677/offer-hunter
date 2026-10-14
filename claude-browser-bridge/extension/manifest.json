@@ -1,10 +1,19 @@
 {
   "manifest_version": 3,
   "name": "Claude Browser Bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lets your local Claude Code MCP server control this Chrome (click, type, select, upload) on sites you allow.",
-  "permissions": ["debugger", "tabs", "storage", "alarms"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "debugger",
+    "tabs",
+    "storage",
+    "alarms",
+    "tabGroups",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"

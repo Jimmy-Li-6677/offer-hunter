@@ -12,9 +12,9 @@ Ground rules:
 
 ## 1. Create the private folder
 
-If `<repo>\private\` already has files, ask before overwriting anything. Otherwise:
+A fresh clone has an empty `<repo>\private\` folder (only `.gitkeep` - keep it; everything else in `private\` is gitignored). If it already has other files, ask before overwriting anything. Otherwise:
 ```powershell
-mkdir <repo>\private
+if not exist <repo>\private mkdir <repo>\private
 copy <repo>\examples\.env.example                   <repo>\private\.env
 copy <repo>\examples\job-search-config.example.json <repo>\private\job-search-config.json
 copy <repo>\examples\resume.example.json            <repo>\private\resume.json
@@ -67,18 +67,18 @@ Fill the matching `ANSWER_*` keys. For `ANSWER_SIGNIN_*` keep the policy text ("
 Start from the copied template and keep its structure, `loop`, and all `autoApplyLoop` steps.
 - `roles`: from the resume's titles and skills, plus what the user wants next - confirm the list.
 - `seniority` and `experienceYears` (`max` = the most years a posting may require for an automatic application, `stretchAt` = from here on skip or ask): from the user's total experience; confirm.
-- `postedWithinHours` (how fresh posts must be): suggest 24. How often jobs are fetched is `jobBoard.fetchEveryHours` (below).
+- `postedWithinHours` (how fresh posts must be): suggest 24.
 - `locations`: one entry per area the user wants, with `workModes`. For LinkedIn, open `https://www.linkedin.com/jobs/search/?location=<city>` in the browser and take the `geoId` from the resulting URL; if that's not possible, use `"linkedinKeyword": "in <City> <State>"` instead. Add `{"name": "Remote US", "workModes": ["remote"]}` if they want remote.
 - `minSalary`: from step 4.
 - `skip.rules`: keep the generic rules; add the user's deal-breakers (clearance, industries, agencies, contract-only, ...). `skip.companies` stays `["${SKIP_COMPANIES}"]`.
 - `sources.careerSites`: ask which company career sites they want checked besides LinkedIn.
-- `jobFeed` (the job APIs that replace LinkedIn browsing as the main source, used by `python jobfeed.py`):
-  - `locationInclude`: one case-insensitive regex per area, listing the cities, state names and state codes of `locations`, e.g. `\b(Austin|TX|Texas)\b`. Remote US jobs pass automatically.
-  - `ats.greenhouse` / `ats.lever` / `ats.ashby`: board slugs of companies the user wants watched. The slug is the name in the company's job-board URL: `job-boards.greenhouse.io/<slug>`, `jobs.lever.co/<slug>`, `jobs.ashbyhq.com/<slug>`. Verify with `python jobfeed.py --check-boards`.
-  - `jsearch.queries` / `adzuna.queries` / `adzuna.where`: search phrases built from `roles` + `seniority`, and the user's areas.
-  - API keys (optional, free tiers): JSearch - sign up on rapidapi.com, subscribe to the JSearch API, put the key in `JSEARCH_API_KEY`. If the key comes from app.openwebninja.com instead, set `jsearch.endpoint` to `"openwebninja"`. Adzuna - register at developer.adzuna.com and put the app id and key in `ADZUNA_APP_ID` / `ADZUNA_APP_KEY`. Set each `monthlyRequestBudget` to the plan's monthly quota. Without keys, only the company boards (`ats`) are used.
-  - Check: `python jobfeed.py --plan`, then `python jobfeed.py`.
-- `jobBoard`: keep the defaults (`port` 8766, `fetchEveryHours` 2 = how often the job board fetches new jobs, `queueCheckSeconds` 30 = how often Claude re-checks the apply queue (it also reacts within seconds to Add to apply queue clicks), `openOnStart` true, `keepDays` 14). Explain `requireSelection`: `true` (default) = Claude applies only to the jobs the user puts in the apply queue on the job board page; `false` = Claude also applies to clear matches the user hasn't reviewed. Let them choose. Then run `python jobboard.py` and show them the page.
+- How jobs are found: the job board page has **Search Google Jobs** and **Search LinkedIn** buttons - Claude (its session must be running) searches in a new Chrome tab and adds up to `browserSearch.candidatesPerSearch` (default 10) candidates that pass the search requirements (autoApplyLoop step 2g). This needs no API key. Keep `browserSearch` as in the template.
+- `jobFeed` - the filters (used by the board's filter checkboxes and by `jobfeed.py`) and the **optional** SerpApi job feed:
+  - `locationInclude`: one case-insensitive regex per non-remote area, **in the same order as `locations`**, listing its cities, state names and state codes, e.g. `\b(Austin|TX|Texas)\b` (the board's Location dropdown pairs them up). Remote US jobs pass automatically.
+  - `staffingAgencies`: keep the template list; add any staffing / training-and-placement firms the user wants flagged.
+  - `keepAll`: `true` (default) = every job `jobfeed.py` fetches goes on the board, labeled with the filter it fails.
+  - SerpApi is optional (`python jobfeed.py`, run only when the user asks): if the user wants it, sign up at serpapi.com, put the API key in `SERPAPI_API_KEY`, fill `serpapi.queries` / `serpapi.locations` / `serpapi.remoteQueries`, set `serpapi.monthlyRequestBudget` to the plan's monthly searches (each results page = 1 search; `maxRequestsPerDay` 0 = no daily cap) and check with `python jobfeed.py --plan`. Otherwise leave `SERPAPI_API_KEY` empty.
+- `jobBoard`: keep the defaults (`port` 8766, `queueCheckSeconds` 30 = how often Claude re-checks the apply queue (it also reacts within seconds to clicks on the page), `openOnStart` true, `keepDays` 14). Explain `requireSelection`: `true` (default) = Claude applies only to the jobs the user puts in the apply queue on the job board page; `false` = Claude also applies to clear matches the user hasn't reviewed. Let them choose. Then run `python jobboard.py` and show them the page (search buttons, filters / Location / Salary dropdowns, **Update my answers**, the apply queue, and the **Waiting on you** tab with Mark as submitted / Skip / Approve & apply).
 - `launcher.chromePath`: check the file exists (`C:\Program Files\Google\Chrome\Application\chrome.exe` or `%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe`). `launcher.claudePermissionMode`: explain `"auto"` (fewer prompts) vs `""` (ask for every action) and let them choose.
 - `autoApplyLoop` step 4: replace `..\private\Resume.pdf` with the real PDF path from step 2.
 - `profile`: fill each note from the answers above (short sentences).
@@ -102,7 +102,7 @@ Then go through the list **one small batch at a time** (up to 4 questions per ro
 3. Write each answer right away to the right place: `.env` answers with `python applog.py answer --section <section> --question "<q>" --answer "<a>"` (updates the existing key), config / resume fields by editing the JSON (keep it valid).
 4. Re-run `python applog.py missing` after each batch and continue until REQUIRED shows "all set" (apart from `BRIDGE_TOKEN`) and the user has answered or skipped every optional item.
 
-Skipped optional items are fine: Claude asks again the first time an application form needs them.
+Skipped optional items are fine: Claude asks again the first time an application form needs them. The user can also fill them later on the job board: **Update my answers** uploads a new resume (Claude fills what it can, autoApplyLoop step 2u) and then lists every application question - `python answerbank.py missing` shows the same open questions in the terminal.
 
 ## 7. Create the application log
 ```powershell
@@ -115,7 +115,7 @@ This creates `private\applications.json` (empty) from the template.
 
 Follow `claude-browser-bridge\START_HERE.md`. Claude can run the commands; the user must do the Chrome parts:
 1. Claude: `cd <repo>\claude-browser-bridge\server`, `npm install`, `npm run build`, `npm run token` (writes `BRIDGE_TOKEN` into `private\.env`).
-2. User: `chrome://extensions` → Developer mode → **Load unpacked** → `<repo>\claude-browser-bridge\extension`; click the extension icon → paste the token → **Save & connect**; add the job sites they use to *Allowed sites* (LinkedIn, greenhouse.io, ashbyhq.com, lever.co, myworkdayjobs.com, ...).
+2. User: `chrome://extensions` → Developer mode → **Load unpacked** → `<repo>\claude-browser-bridge\extension`; click the extension icon → paste the token → **Save & connect**; add the job sites they use to *Allowed sites* (LinkedIn, greenhouse.io, ashbyhq.com, lever.co, myworkdayjobs.com, applytojob.com, ...). Tabs Claude controls go into an orange **Claude** tab group with an orange page frame (*Highlight tabs Claude controls* in the popup). After pulling an update of the extension, click its **reload ↻** icon in `chrome://extensions`.
 3. Claude: `claude mcp add --scope user browser-bridge -- node <repo>\claude-browser-bridge\server\dist\index.js` (skip if `claude mcp list` already shows `browser-bridge`).
 4. Claude: run `<repo>\launcher\build.cmd`, then `<repo>\StartJobSearch.exe --dry-run > %TEMP%\dry.txt` and check it reports the config, the `.env` values and no missing `${NAME}` placeholders. Fix anything it complains about.
 
@@ -127,4 +127,5 @@ Run `python applog.py missing` one last time - it must print "REQUIRED: all set"
 - what was filled from the resume and what they answered,
 - which keys / fields are still empty (they can fill them later, or Claude asks the first time a form needs them),
 - how to start: double-click `StartJobSearch.exe`, or `cd <repo>\JobSearch`, `claude`, "continue my job search",
+- how it works: on the job board click **Search Google Jobs** / **Search LinkedIn** → Claude adds about 10 candidates → click **Add to apply queue** on the ones to apply to → Claude applies in a new Chrome tab per job and logs each one; jobs that need them (sign-in, CAPTCHA, unknown question, a rule they failed) wait under **Waiting on you**,
 - that everything personal is in `private\` and is never committed.
