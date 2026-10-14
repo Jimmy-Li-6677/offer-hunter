@@ -60,7 +60,79 @@
     "careerSites": [
       "Greenhouse / Ashby / Lever boards",
       "<company career site>"
-    ]
+    ],
+    "_note": "Primary source = the job APIs in jobFeed (python jobfeed.py). linkedin = fallback browsing (autoApplyLoop 2b); careerSites = sites to browse when not covered by jobFeed.ats."
+  },
+  "jobFeed": {
+    "_about": "Job APIs used by JobSearch/jobfeed.py instead of browsing LinkedIn search pages (autoApplyLoop step 2). Regex lists are case-insensitive. Keys for jsearch/adzuna go in private/.env; a source without its key is skipped.",
+    "postedWithinHours": 24,
+    "_postedWithinHoursNote": "API freshness window. Wider than the old LinkedIn 2h window because API data lags a few hours; already-logged jobs are filtered out, so re-seeing a job costs nothing.",
+    "titleInclude": [
+      "\\b(engineer|engineering|developer|programmer|SDET|SWE)\\b"
+    ],
+    "titleExclude": [
+      "\\b(senior|sr\\.?|staff|principal|lead|manager|director|head of|vp|vice president|architect|distinguished|fellow)\\b",
+      "\\b(intern|internship|co-?op|apprentice)\\b",
+      "\\b(III|IV)\\b",
+      "\\b(mechanical|electrical|civil|hardware|manufacturing|chemical|structural|RF|analog|process|facilities|sales|field|solutions|customer|support|recruit\\w*|technician|battery|propulsion|avionics)\\b"
+    ],
+    "locationInclude": [
+      "\\b(<City>|<ST>|<State name>)\\b"
+    ],
+    "locationVague": [
+      "(remote|hybrid|in[- ]office|on[- ]?site|distributed|multiple locations|various|flexible|anywhere)?"
+    ],
+    "remoteCountries": [
+      "",
+      "US",
+      "USA",
+      "United States"
+    ],
+    "remoteExcludeLocations": [
+      "\\b(Canada|Toronto|Vancouver|UK|United Kingdom|London|Ireland|Dublin|India|Bangalore|Bengaluru|Germany|Berlin|Singapore|Australia|Sydney|Brazil|Mexico|Poland|Netherlands|Amsterdam|Spain|France|Paris|Japan|Tokyo|Israel|EMEA|APAC|LATAM|Europe)\\b"
+    ],
+    "keepUndated": false,
+    "ats": {
+      "enabled": true,
+      "greenhouse": [
+        "<greenhouse-board-slug>"
+      ],
+      "lever": [
+        "<lever-company-slug>"
+      ],
+      "ashby": [
+        "<ashby-org-slug>"
+      ]
+    },
+    "jsearch": {
+      "enabled": true,
+      "_about": "Google for Jobs aggregate (LinkedIn, Indeed, Glassdoor, ZipRecruiter, company sites). Key: JSEARCH_API_KEY. endpoint 'rapidapi' (key from rapidapi.com JSearch) or 'openwebninja' (key from app.openwebninja.com). Set monthlyRequestBudget to your plan's monthly quota; each query = 1 request; queries rotate across rounds.",
+      "endpoint": "rapidapi",
+      "country": "us",
+      "queries": [
+        "entry level <role>",
+        "junior <role>"
+      ],
+      "jobRequirements": "",
+      "maxRequestsPerRound": 1,
+      "minHoursBetweenRuns": 4,
+      "monthlyRequestBudget": 180
+    },
+    "adzuna": {
+      "enabled": true,
+      "_about": "Adzuna job search API. Keys: ADZUNA_APP_ID + ADZUNA_APP_KEY (developer.adzuna.com). Each query x where = 1 request; searches rotate across rounds. Set monthlyRequestBudget to your plan's quota.",
+      "country": "us",
+      "queries": [
+        "entry level <role>"
+      ],
+      "where": [
+        "<city or state>"
+      ],
+      "resultsPerPage": 50,
+      "maxRequestsPerRound": 3,
+      "minHoursBetweenRuns": 2,
+      "monthlyRequestBudget": 900
+    }
   },
   "loop": {
     "intervalHours": 2,
@@ -94,7 +166,7 @@
     "_about": "Standing search rules, one sentence each. The search fields above override anything here that conflicts.",
     "rules": [
       "Only roles from the roles list at the seniority levels listed (about 0 to experienceYears.max years required).",
-      "Source: LinkedIn (signed in in Chrome) plus company career sites.",
+      "Source: LinkedIn (signed in in Chrome) plus company career sites. [superseded by jobFeed: job APIs first via jobfeed.py, LinkedIn browsing only as fallback - autoApplyLoop 2 / 2b]",
       "Skip anything matching skip.rules or skip.companies; log every candidate / applied / skipped job in applications.json.",
       "LinkedIn pacing: one search / results page at a time with a break of loop.linkedinSearchDelayMinutes in between, no bulk fetches. On HTTP 429 stop LinkedIn for the round and use company career sites."
     ]
@@ -105,10 +177,10 @@
     "steps": [
       "1. Read job-search-config.json (all sections; the values of its ${...} placeholders come from ..\\private\\.env) and applications.json. Before analyzing ANY job, filter out jobs already logged (any status) with: python applog.py check \"<company>\" \"<role>\" [--id <job id>] - exit 0 = already logged, skip it (unless it is a Candidate / Needs approval job the user approved). Log every analyzed job with python applog.py add ...",
       "1b. KEEP THE JOB LINK: every job logged in applications.json must have its link - always pass --url to python applog.py add: the company's own posting / application page for Submitted jobs, otherwise the LinkedIn post (https://www.linkedin.com/jobs/view/<id>/). applog.py refuses a Submitted entry without --url; python applog.py list --no-link shows entries still missing a link.",
-      "2. LinkedIn search for jobs posted in the last postedWithinHours hours: judge by the card text (\"Posted X minutes / hours ago\"), ONE results page at a time, waiting loop.linkedinSearchDelayMinutes between searches. Search every area in the locations list (linkedinGeoId, or linkedinKeyword appended to the search). Then 1-2 sites from sources.careerSites if time remains. On HTTP 429: stop LinkedIn for the round.",
-      "2a. FINISH BEFORE NEXT SEARCH: do not run another LinkedIn search until EVERY job on the previous results page has been analyzed - each one either verified + applied, logged as Needs approval / Needs User, or logged as Skipped with the reason. Keep a per-search checklist.",
+      "2. JOB FEED FIRST: start each round with `python jobfeed.py` in the JobSearch folder. It pulls fresh posts from the job APIs in jobFeed (company Greenhouse / Lever / Ashby boards; JSearch = Google for Jobs incl. LinkedIn, Indeed, Glassdoor; Adzuna), keeps only target titles / locations / jobs posted within jobFeed.postedWithinHours, drops skip companies and every job already in applications.json, prints the candidates newest first with their apply link and saves them to ..\\private\\jobfeed-latest.json. Work through that list top to bottom: open each link and verify it per step 3. CHECK-LOCATION = the board gave no city, read it on the posting. 'via <publisher>' = aggregator / job-board link: find the company's own posting or apply page and apply there (step 2c). If jobfeed.py errors, note it and use step 2b.",
+      "2a. FINISH THE LIST: analyze EVERY job jobfeed.py printed before any LinkedIn browsing - each one verified+applied, logged as Needs approval / Needs User, or logged as Skipped with the reason in applications.json (log skips too, so the next run filters them out). Keep a checklist and tick each job off. The same applies to each LinkedIn results page in step 2b.",
       "2a2. CANDIDATE CAP + TIME LIMIT: once loop.candidateCapPerRound qualified candidates are found, stop searching and apply to those first. If finding candidates takes too long (more than ~30 minutes or 3 searches with nothing new), stop searching, apply to what was found, and wait for the next round.",
-      "2b. LINKEDIN FIRST, EVERY ROUND: start each round on LinkedIn and work through all companies with recent posts (small / unknown companies too), searching every role in the roles list. Company career-site browsing is secondary.",
+      "2b. LINKEDIN = FALLBACK (replaces \"LinkedIn first\"): browse LinkedIn job search only when jobfeed.py gave fewer than loop.candidateCapPerRound qualified candidates this round, or failed. Then: jobs posted in the last postedWithinHours hours (judge by the card text \"Posted X minutes / hours ago\"; LinkedIn ignores f_TPR=r7200), ONE results page at a time, loop.linkedinSearchDelayMinutes wait between searches, areas = the locations list (linkedinGeoId / linkedinKeyword) plus Remote US, search all roles in the roles list (entry level, 0-2 yrs), small / unknown companies too. On HTTP 429: stop LinkedIn for the round. Companies whose career sites keep producing good matches: add their board slug to jobFeed.ats (check with python jobfeed.py --check-boards).",
       "2c. NO EASY APPLY: skip every LinkedIn \"Easy Apply\" job; apply only on the company's own site (\"Apply on company website\" / career site / ATS). Log Easy Apply-only jobs as Skipped with reason \"Easy Apply\" (if the same job is on the company's own site, apply there instead).",
       "2d. COMPANY DAILY CAP: apply to the same company at most 2 times per calendar day. python applog.py check exits 2 when the cap is reached - then do not apply; log the job as Candidate with note \"company daily cap\".",
       "3. Verify each candidate on the company's own posting against the seniority, experienceYears, skip and locations settings.",

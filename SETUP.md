@@ -72,6 +72,12 @@ Start from the copied template and keep its structure, `loop`, and all `autoAppl
 - `minSalary`: from step 4.
 - `skip.rules`: keep the generic rules; add the user's deal-breakers (clearance, industries, agencies, contract-only, ...). `skip.companies` stays `["${SKIP_COMPANIES}"]`.
 - `sources.careerSites`: ask which company career sites they want checked besides LinkedIn.
+- `jobFeed` (the job APIs that replace LinkedIn browsing as the main source, used by `python jobfeed.py`):
+  - `locationInclude`: one case-insensitive regex per area, listing the cities, state names and state codes of `locations`, e.g. `\b(Austin|TX|Texas)\b`. Remote US jobs pass automatically.
+  - `ats.greenhouse` / `ats.lever` / `ats.ashby`: board slugs of companies the user wants watched. The slug is the name in the company's job-board URL: `job-boards.greenhouse.io/<slug>`, `jobs.lever.co/<slug>`, `jobs.ashbyhq.com/<slug>`. Verify with `python jobfeed.py --check-boards`.
+  - `jsearch.queries` / `adzuna.queries` / `adzuna.where`: search phrases built from `roles` + `seniority`, and the user's areas.
+  - API keys (optional, free tiers): JSearch - sign up on rapidapi.com, subscribe to the JSearch API, put the key in `JSEARCH_API_KEY`. If the key comes from app.openwebninja.com instead, set `jsearch.endpoint` to `"openwebninja"`. Adzuna - register at developer.adzuna.com and put the app id and key in `ADZUNA_APP_ID` / `ADZUNA_APP_KEY`. Set each `monthlyRequestBudget` to the plan's monthly quota. Without keys, only the company boards (`ats`) are used.
+  - Check: `python jobfeed.py --plan`, then `python jobfeed.py`.
 - `launcher.chromePath`: check the file exists (`C:\Program Files\Google\Chrome\Application\chrome.exe` or `%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe`). `launcher.claudePermissionMode`: explain `"auto"` (fewer prompts) vs `""` (ask for every action) and let them choose.
 - `autoApplyLoop` step 4: replace `..\private\Resume.pdf` with the real PDF path from step 2.
 - `profile`: fill each note from the answers above (short sentences).
