@@ -59,8 +59,6 @@ static class StartJobSearch
         var locations = ((IEnumerable)Require(config, "locations")).Cast<Dictionary<string, object>>()
             .Select(l => Convert.ToString(Require(l, "name"))).ToList();
         int postedHours = Convert.ToInt32(Require(config, "postedWithinHours"));
-        var loop = (Dictionary<string, object>)Require(config, "loop");
-        double intervalHours = Convert.ToDouble(Require(loop, "intervalHours"));
         if (roles.Count == 0 || locations.Count == 0)
             throw new Exception("job-search-config.json: \"roles\" and \"locations\" must not be empty.");
         var autoApplyLoop = Require(config, "autoApplyLoop") as Dictionary<string, object>;
@@ -129,9 +127,22 @@ static class StartJobSearch
             else Process.Start(boardUrl);
         }
 
+        // ---- One session at a time: only the session whose bridge owns BRIDGE_PORT can reach Chrome ----
+        int bridgePort = env.ContainsKey("BRIDGE_PORT") && env["BRIDGE_PORT"].Trim() != "" ? int.Parse(env["BRIDGE_PORT"]) : 8765;
+        bool sessionRunning = PortOpen(bridgePort);
+        if (sessionRunning && !dryRun)
+        {
+            var answer = MessageBox.Show(
+                "A job-search session is already running: its Claude window owns the browser bridge (port " + bridgePort + "), " +
+                "and a second session could not use Chrome.\n\n" +
+                "Use the open Claude window - it applies to the jobs in your apply queue by itself, or tell it " +
+                "\"apply my selected jobs\".\n\nStart a second session anyway?",
+                Title, MessageBoxButtons.YesNo, MessageBoxIcon.Information, MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes) return; // the job board was opened above
+        }
+
         // ---- Claude Code ----
         string claude = FindClaude();
-        string interval = intervalHours == Math.Floor(intervalHours) ? intervalHours + "h" : (int)(intervalHours * 60) + "m";
         string browserText = browserTool == "claude-in-chrome"
             ? "Claude in Chrome (mcp__claude-in-chrome__*)"
             : "the browser-bridge MCP tools (my own Chrome extension)";
@@ -141,11 +152,13 @@ static class StartJobSearch
             "(roles: " + string.Join(", ", roles) + "; locations: " + string.Join(", ", locations) +
             "; posted within " + postedHours + "h). The application answer bank is the " + answerCount + " ANSWER_* entries in " + envPath +
             " (read that file; it also holds the APPLICANT_* contact values that fill ${NAME} placeholders; they are loaded into this session's environment too). " +
-            "Follow CLAUDE.md 'Starting the loop' and the " + steps.Count + " steps in its autoApplyLoop section, with loop interval " + interval +
-            ". Use " + browserText + " in Google Chrome for all browsing." +
+            "Follow CLAUDE.md 'Starting the session' and the " + steps.Count + " steps in its autoApplyLoop section. " +
+            "Use " + browserText + " in Google Chrome for all browsing." +
             (jobBoard == null ? "" :
-                " The user picks the jobs to apply to on the job board page " + boardUrl +
-                " (autoApplyLoop step 2s): apply only to the jobs listed by python jobboard.py queue, in that order.");
+                " There are no timed apply rounds: the job board page " + boardUrl + " fetches jobs by itself; the user picks" +
+                " the jobs to apply to there (autoApplyLoop step 2s). Apply only to the jobs listed by python jobboard.py queue," +
+                " in that order, with a QUEUE RUN (step 2q), and start the queue watcher from CLAUDE.md 'Starting the session'" +
+                " so queued jobs are applied to within minutes.");
 
         var args = new List<string>();
         if (permissionMode != "") args.Add("--permission-mode " + Quote(permissionMode));
@@ -157,6 +170,9 @@ static class StartJobSearch
             Console.WriteLine("chrome: " + (startChrome ? chromePath : "(not started)"));
             Console.WriteLine("board:  " + (openBoard ? python + " jobboard.py serve --no-browser -> " + boardUrl +
                                             (PortOpen(boardPort) ? " (already running)" : "") : "(not opened)"));
+            Console.WriteLine("bridge: port " + bridgePort + (sessionRunning
+                ? " in use - a job-search session is already running (a real start would ask before starting another)"
+                : " free"));
             Console.WriteLine("env:    " + env.Count + " values loaded from " + envPath + " (" + answerCount + " ANSWER_*)");
             Console.WriteLine("run:    " + claude + " " + string.Join(" ", args));
             return;

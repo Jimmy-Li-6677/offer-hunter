@@ -78,6 +78,7 @@
   .lognote { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
   .actions a { color: var(--accent); font-size: 13px; align-self: center; }
+  .actions a.btn-link { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 6px 12px; text-decoration: none; font-weight: 600; }
   aside { position: sticky; top: 76px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); }
   aside h2 { font-size: 15px; margin: 0 0 4px; }
   aside p { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
@@ -163,6 +164,11 @@ function ago(iso) {
   if (m < 48 * 60) return `${Math.floor(m / 60)}h ago`;
   return `${Math.floor(m / 1440)}d ago`;
 }
+function until(iso) {
+  const m = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
+  if (m <= 1) return "in a minute";
+  return m < 60 ? `in ${m}m` : `in ${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
 function pillClass(s) {
   if (s === "new") return "new";
   if (s === "selected" || s === "applying") return s;
@@ -186,8 +192,15 @@ function apply(data) {
   state.jobs = data.jobs || [];
   const keys = new Set(state.jobs.map(j => j.key));
   state.checked.forEach(k => { if (!keys.has(k)) state.checked.delete(k); });
-  const when = data.fetchedAt ? `last fetched ${ago(data.fetchedAt)}` : "not fetched yet";
-  $("meta").textContent = `${state.jobs.length} jobs on the board · ${when}`;
+  const when = data.fetching ? "fetching new jobs now…" : data.fetchedAt ? `last fetched ${ago(data.fetchedAt)}` : "not fetched yet";
+  const next = data.nextFetchAt && !data.fetching ? ` · next automatic fetch ${until(data.nextFetchAt)}` : "";
+  $("meta").textContent = `${state.jobs.length} jobs on the board · ${when}${next}`;
+  if (data.lastFetchError && !state.busy) showError("The last automatic job fetch failed: " + data.lastFetchError);
+  const every = data.queueCheckMinutes;
+  $("qhelp").textContent = every
+    ? `While Claude's job-search session is running, it starts on these jobs within about ${every} minutes, in this order, ` +
+      `in a new Chrome tab per job. Jobs that need you (sign-in, CAPTCHA, unknown question) move to “Waiting on you” with their tab left open.`
+    : "Claude applies to these jobs in this order at the next round. To start sooner, tell Claude “apply my selected jobs”.";
   const n = $("notice");
   n.hidden = data.requireSelection !== false;
   n.textContent = "jobBoard.requireSelection is off: Claude also applies to clear matches you have not selected. Jobs you skip here are never applied to.";
@@ -261,6 +274,9 @@ function card(j) {
   if (s === "selected") buttons.push(`<button data-act="new" data-key="${k}">Remove from queue</button>`);
   if (s === "new" || s === "selected") buttons.push(`<button data-act="skipped" data-key="${k}">Skip</button>`);
   if (s === "skipped") buttons.push(`<button data-act="new" data-key="${k}">Undo skip</button>`);
+  const resume = safeUrl(j.logUrl) || applyUrl || posting;
+  if (s === "Needs User" && resume)  // Claude left the tab open; this reopens the application if that tab is gone
+    buttons.push(`<a class="btn-link" href="${esc(resume)}" target="_blank" rel="noopener noreferrer">Continue application ↗</a>`);
   if (posting) buttons.push(`<a href="${esc(posting)}" target="_blank" rel="noopener noreferrer">Open posting ↗</a>`);
   if (applyUrl && applyUrl !== posting) buttons.push(`<a href="${esc(applyUrl)}" target="_blank" rel="noopener noreferrer">Apply page ↗</a>`);
   const via = j.direct === false && j.publisher ? `via ${esc(j.publisher)}` : "";
@@ -280,14 +296,14 @@ function card(j) {
           <span>${esc(j.source)}${via ? " · " + via : ""}</span>
         </div>
         ${desc}
-        ${j.logNotes ? `<div class="lognote">Log (${esc(j.logDate)}): ${esc(j.logNotes)}</div>` : ""}
+        ${j.logNotes ? `<div class="lognote">${s === "Needs User" ? "Needs you" : "Log"} (${esc(j.logDate)}): ${esc(j.logNotes)}</div>` : ""}
         <div class="actions">${buttons.join("")}</div>
       </div>
     </article>`;
 }
 
 async function choose(keys, choice) {
-  try { apply(await api("/api/choice", { keys, choice })); showError(""); }
+  try { const r = await api("/api/choice", { keys, choice }); showError(""); apply(r); }
   catch (e) { showError("Could not save your choice: " + e.message + ". Is the job board server still running?"); }
 }
 async function move(key, dir) {
@@ -337,7 +353,7 @@ $("refresh").onclick = async () => {
 
 async function load() {
   if (state.busy) return;
-  try { apply(await api("/api/jobs")); showError(""); }
+  try { const d = await api("/api/jobs"); showError(""); apply(d); }
   catch (e) { showError("Cannot reach the job board server (" + e.message + "). Start it with: python jobboard.py"); }
 }
 load();
