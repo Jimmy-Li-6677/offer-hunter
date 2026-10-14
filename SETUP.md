@@ -78,6 +78,7 @@ Start from the copied template and keep its structure, `loop`, and all `autoAppl
   - `jsearch.queries` / `adzuna.queries` / `adzuna.where`: search phrases built from `roles` + `seniority`, and the user's areas.
   - API keys (optional, free tiers): JSearch - sign up on rapidapi.com, subscribe to the JSearch API, put the key in `JSEARCH_API_KEY`. If the key comes from app.openwebninja.com instead, set `jsearch.endpoint` to `"openwebninja"`. Adzuna - register at developer.adzuna.com and put the app id and key in `ADZUNA_APP_ID` / `ADZUNA_APP_KEY`. Set each `monthlyRequestBudget` to the plan's monthly quota. Without keys, only the company boards (`ats`) are used.
   - Check: `python jobfeed.py --plan`, then `python jobfeed.py`.
+- `jobBoard`: keep the defaults (`port` 8766, `openOnStart` true, `keepDays` 14). Explain `requireSelection`: `true` (default) = Claude applies only to the jobs the user puts in the apply queue on the job board page; `false` = Claude also applies to clear matches the user hasn't reviewed. Let them choose. Then run `python jobboard.py` and show them the page.
 - `launcher.chromePath`: check the file exists (`C:\Program Files\Google\Chrome\Application\chrome.exe` or `%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe`). `launcher.claudePermissionMode`: explain `"auto"` (fewer prompts) vs `""` (ask for every action) and let them choose.
 - `autoApplyLoop` step 4: replace `..\private\Resume.pdf` with the real PDF path from step 2.
 - `profile`: fill each note from the answers above (short sentences).

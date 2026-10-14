@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Board</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #5d6673; --line: #e2e5ea;
+    --accent: #2f6fde; --accent-text: #ffffff; --accent-soft: #e7efff;
+    --ok: #1d7f4e; --ok-soft: #e3f4ea; --warn: #9a6200; --warn-soft: #fdf1dc;
+    --bad: #b3261e; --bad-soft: #fbe6e4; --gray-soft: #eef0f3;
+    --radius: 10px; --shadow: 0 1px 2px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111418; --panel: #1a1f25; --text: #e6e9ee; --muted: #9aa4b2; --line: #2b323b;
+      --accent: #6b9cff; --accent-text: #0b1020; --accent-soft: #1d2a44;
+      --ok: #5fcf95; --ok-soft: #173326; --warn: #e5b45a; --warn-soft: #3a2d14;
+      --bad: #ff8a80; --bad-soft: #3d1c1a; --gray-soft: #232a32; --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111418; --panel: #1a1f25; --text: #e6e9ee; --muted: #9aa4b2; --line: #2b323b;
+    --accent: #6b9cff; --accent-text: #0b1020; --accent-soft: #1d2a44;
+    --ok: #5fcf95; --ok-soft: #173326; --warn: #e5b45a; --warn-soft: #3a2d14;
+    --bad: #ff8a80; --bad-soft: #3d1c1a; --gray-soft: #232a32; --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 1280px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  h1 { font-size: 18px; margin: 0; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .spacer { flex: 1; }
+  button, select, input { font: inherit; color: inherit; }
+  button { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.ghost { border-color: transparent; background: transparent; padding: 4px 8px; }
+  button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=search], select { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 10px; }
+  input[type=search] { min-width: 0; flex: 1 1 220px; }
+  main { max-width: 1280px; margin: 0 auto; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: minmax(0, 1fr); }
+    aside { order: -1; position: static; }
+  }
+  @media (max-width: 560px) {
+    input[type=search] { flex-basis: 100%; }
+    select { flex: 1 1 0; min-width: 0; }
+    header { position: static; }
+  }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .tab { border-radius: 999px; padding: 5px 12px; }
+  .tab[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+  .tab .n { color: var(--muted); margin-left: 4px; }
+  .notice { background: var(--accent-soft); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; font-size: 13px; }
+  .error { background: var(--bad-soft); color: var(--bad); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; white-space: pre-wrap; font-size: 13px; }
+  .bulk { display: none; align-items: center; gap: 8px; margin-bottom: 12px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--accent); border-radius: var(--radius); }
+  .bulk.show { display: flex; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; margin-bottom: 10px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; }
+  .card.selected { border-color: var(--accent); }
+  .card input[type=checkbox] { margin-top: 4px; width: 16px; height: 16px; }
+  .title { font-weight: 600; font-size: 15px; color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
+  .title:hover { text-decoration: underline; }
+  .sub { color: var(--muted); font-size: 13px; display: flex; gap: 6px 12px; flex-wrap: wrap; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .pill { font-size: 12px; border-radius: 999px; padding: 1px 8px; background: var(--gray-soft); color: var(--muted); white-space: nowrap; }
+  .pill.new { background: var(--accent-soft); color: var(--accent); }
+  .pill.selected, .pill.applying { background: var(--accent); color: var(--accent-text); }
+  .pill.done { background: var(--ok-soft); color: var(--ok); }
+  .pill.wait { background: var(--warn-soft); color: var(--warn); }
+  .pill.skip { background: var(--gray-soft); color: var(--muted); }
+  .desc { color: var(--text); font-size: 13px; margin: 6px 0 2px; overflow-wrap: anywhere; }
+  .desc.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .lognote { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .actions a { color: var(--accent); font-size: 13px; align-self: center; }
+  aside { position: sticky; top: 76px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); }
+  aside h2 { font-size: 15px; margin: 0 0 4px; }
+  aside p { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+  ol.queue { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow: auto; }
+  ol.queue li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+  ol.queue li:first-child { border-top: 0; }
+  .qn { color: var(--muted); font-size: 12px; text-align: right; }
+  .qt { font-size: 13px; overflow-wrap: anywhere; }
+  .qt small { display: block; color: var(--muted); }
+  .qb { display: flex; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 16px; background: var(--panel); border: 1px dashed var(--line); border-radius: var(--radius); }
+  details.out { margin-bottom: 12px; font-size: 12px; }
+  details.out pre { white-space: pre-wrap; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; max-height: 240px; overflow: auto; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>Job Board</h1>
+    <span class="meta" id="meta">Loading…</span>
+    <span class="spacer"></span>
+    <button id="refresh" class="primary" title="Run the job feed now and add new posts">Refresh jobs</button>
+  </div>
+  <div class="bar" style="padding-top:0">
+    <label class="sr" for="q">Search</label>
+    <input type="search" id="q" placeholder="Search title, company, location, description">
+    <label class="sr" for="sort">Sort</label>
+    <select id="sort">
+      <option value="posted">Newest posted</option>
+      <option value="company">Company</option>
+      <option value="title">Title</option>
+      <option value="location">Location</option>
+    </select>
+    <label class="sr" for="source">Source</label>
+    <select id="source"><option value="">All sources</option></select>
+  </div>
+</header>
+
+<main>
+  <section aria-label="Jobs">
+    <div class="tabs" id="tabs" role="toolbar" aria-label="Status filter"></div>
+    <div id="notice" class="notice" hidden></div>
+    <div id="error" class="error" role="alert" hidden></div>
+    <details class="out" id="out" hidden><summary>Last refresh output</summary><pre id="outText"></pre></details>
+    <div class="bulk" id="bulk">
+      <strong id="bulkN"></strong>
+      <button id="bulkSelect" class="primary">Add to apply queue</button>
+      <button id="bulkSkip">Skip</button>
+      <button id="bulkClear" class="ghost">Clear</button>
+    </div>
+    <div id="list"></div>
+  </section>
+
+  <aside aria-label="Apply queue">
+    <h2>Apply queue <span class="meta" id="qcount"></span></h2>
+    <p id="qhelp">Claude applies to these jobs in this order at the next round. To start sooner, tell Claude “apply my selected jobs”.</p>
+    <ol class="queue" id="queue"></ol>
+  </aside>
+</main>
+
+<script>
+"use strict";
+const GROUPS = [
+  { id: "review", label: "To review", match: s => s === "new" },
+  { id: "queue", label: "Apply queue", match: s => s === "selected" || s === "applying" },
+  { id: "waiting", label: "Waiting on you", match: s => ["Needs User", "Needs approval", "Pending", "Candidate"].includes(s) },
+  { id: "done", label: "Submitted", match: s => s === "Submitted" },
+  { id: "skipped", label: "Skipped", match: s => s === "skipped" || s === "Skipped" },
+  { id: "all", label: "All", match: () => true },
+];
+const state = { jobs: [], tab: "review", checked: new Set(), expanded: new Set(), busy: false };
+const $ = id => document.getElementById(id);
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function safeUrl(u) { return /^https?:\/\//i.test(u || "") ? u : ""; }
+function ago(iso) {
+  if (!iso) return "date unknown";
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 60) return `${m}m ago`;
+  if (m < 48 * 60) return `${Math.floor(m / 60)}h ago`;
+  return `${Math.floor(m / 1440)}d ago`;
+}
+function pillClass(s) {
+  if (s === "new") return "new";
+  if (s === "selected" || s === "applying") return s;
+  if (s === "Submitted") return "done";
+  if (s === "skipped" || s === "Skipped") return "skip";
+  return "wait";
+}
+function pillText(s) {
+  return { new: "New", selected: "In queue", applying: "Applying now", skipped: "Skipped by you" }[s] || s;
+}
+
+async function api(path, body) {
+  const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const r = await fetch(path, opt);
+  if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+  return r.json();
+}
+function showError(msg) { const e = $("error"); e.textContent = msg; e.hidden = !msg; }
+
+function apply(data) {
+  state.jobs = data.jobs || [];
+  const keys = new Set(state.jobs.map(j => j.key));
+  state.checked.forEach(k => { if (!keys.has(k)) state.checked.delete(k); });
+  const when = data.fetchedAt ? `last fetched ${ago(data.fetchedAt)}` : "not fetched yet";
+  $("meta").textContent = `${state.jobs.length} jobs on the board · ${when}`;
+  const n = $("notice");
+  n.hidden = data.requireSelection !== false;
+  n.textContent = "jobBoard.requireSelection is off: Claude also applies to clear matches you have not selected. Jobs you skip here are never applied to.";
+  const sources = [...new Set(state.jobs.map(j => j.source).filter(Boolean))].sort();
+  const sel = $("source"), cur = sel.value;
+  sel.innerHTML = '<option value="">All sources</option>' + sources.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+  sel.value = sources.includes(cur) ? cur : "";
+  render();
+}
+
+function filtered() {
+  const g = GROUPS.find(x => x.id === state.tab);
+  const q = $("q").value.trim().toLowerCase();
+  const src = $("source").value;
+  let list = state.jobs.filter(j => g.match(j.status) && (!src || j.source === src));
+  if (q) list = list.filter(j => [j.title, j.company, j.location, j.description].join(" ").toLowerCase().includes(q));
+  const by = $("sort").value;
+  const cmp = {
+    posted: (a, b) => (b.posted || "").localeCompare(a.posted || ""),
+    company: (a, b) => (a.company || "").localeCompare(b.company || "") || (a.title || "").localeCompare(b.title || ""),
+    title: (a, b) => (a.title || "").localeCompare(b.title || ""),
+    location: (a, b) => (a.location || "").localeCompare(b.location || ""),
+  }[by];
+  return list.sort(cmp);
+}
+
+function render() {
+  $("tabs").innerHTML = GROUPS.map(g => {
+    const n = state.jobs.filter(j => g.match(j.status)).length;
+    return `<button class="tab" data-tab="${g.id}" aria-pressed="${g.id === state.tab}">${g.label}<span class="n">${n}</span></button>`;
+  }).join("");
+
+  const list = filtered();
+  if (!state.jobs.length) {
+    $("list").innerHTML = `<div class="empty">No jobs on the board yet.<br>Click <b>Refresh jobs</b> to run the job feed.</div>`;
+  } else if (!list.length) {
+    const msg = state.tab === "review" ? "Nothing new to review. New posts appear after the next refresh." : "No jobs in this view.";
+    $("list").innerHTML = `<div class="empty">${msg}</div>`;
+  } else {
+    $("list").innerHTML = list.map(card).join("");
+  }
+
+  const q = state.jobs.filter(j => j.status === "selected" || j.status === "applying")
+    .sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9));
+  $("qcount").textContent = q.length ? `· ${q.length}` : "";
+  $("queue").innerHTML = q.length ? q.map((j, i) => `
+    <li>
+      <span class="qn">${i + 1}.</span>
+      <span class="qt">${esc(j.title)}<small>${esc(j.company)}${j.status === "applying" ? " · applying now" : ""}</small></span>
+      <span class="qb">
+        <button class="ghost" data-act="up" data-key="${esc(j.key)}" aria-label="Move up" ${i === 0 ? "disabled" : ""}>↑</button>
+        <button class="ghost" data-act="down" data-key="${esc(j.key)}" aria-label="Move down" ${i === q.length - 1 ? "disabled" : ""}>↓</button>
+        <button class="ghost" data-act="new" data-key="${esc(j.key)}" aria-label="Remove from queue">✕</button>
+      </span>
+    </li>`).join("") : `<li style="display:block;color:var(--muted);font-size:13px">No jobs selected. Use <b>Add to apply queue</b> on a job.</li>`;
+
+  const n = state.checked.size;
+  $("bulk").classList.toggle("show", n > 0);
+  $("bulkN").textContent = `${n} checked`;
+}
+
+function card(j) {
+  const s = j.status, k = esc(j.key);
+  const posting = safeUrl(j.url), applyUrl = safeUrl(j.applyUrl);
+  const open = state.expanded.has(j.key);
+  const desc = j.description ? `<div class="desc ${open ? "" : "clamp"}">${esc(j.description)}</div>
+      ${j.description.length > 280 ? `<button class="ghost" data-act="more" data-key="${k}">${open ? "Show less" : "Show more"}</button>` : ""}` : "";
+  const canChoose = s === "new" || s === "selected" || s === "skipped";
+  const buttons = [];
+  if (s === "new" || s === "skipped") buttons.push(`<button class="primary" data-act="selected" data-key="${k}">Add to apply queue</button>`);
+  if (s === "selected") buttons.push(`<button data-act="new" data-key="${k}">Remove from queue</button>`);
+  if (s === "new" || s === "selected") buttons.push(`<button data-act="skipped" data-key="${k}">Skip</button>`);
+  if (s === "skipped") buttons.push(`<button data-act="new" data-key="${k}">Undo skip</button>`);
+  if (posting) buttons.push(`<a href="${esc(posting)}" target="_blank" rel="noopener noreferrer">Open posting ↗</a>`);
+  if (applyUrl && applyUrl !== posting) buttons.push(`<a href="${esc(applyUrl)}" target="_blank" rel="noopener noreferrer">Apply page ↗</a>`);
+  const via = j.direct === false && j.publisher ? `via ${esc(j.publisher)}` : "";
+  return `
+    <article class="card ${s === "selected" || s === "applying" ? "selected" : ""}">
+      <input type="checkbox" data-check="${k}" aria-label="Check ${esc(j.title)}" ${state.checked.has(j.key) ? "checked" : ""} ${canChoose ? "" : "disabled"}>
+      <div>
+        <div class="row">
+          ${posting ? `<a class="title" href="${esc(posting)}" target="_blank" rel="noopener noreferrer">${esc(j.title)}</a>` : `<span class="title">${esc(j.title)}</span>`}
+          <span class="pill ${pillClass(s)}">${esc(pillText(s))}</span>
+        </div>
+        <div class="sub">
+          <span><b>${esc(j.company)}</b></span>
+          <span>${esc(j.location || "location not given")}${j.remote ? " · remote" : ""}${j.checkLocation ? " · check location" : ""}</span>
+          ${j.salary ? `<span>${esc(j.salary)}</span>` : ""}
+          <span>${esc(ago(j.posted))}</span>
+          <span>${esc(j.source)}${via ? " · " + via : ""}</span>
+        </div>
+        ${desc}
+        ${j.logNotes ? `<div class="lognote">Log (${esc(j.logDate)}): ${esc(j.logNotes)}</div>` : ""}
+        <div class="actions">${buttons.join("")}</div>
+      </div>
+    </article>`;
+}
+
+async function choose(keys, choice) {
+  try { apply(await api("/api/choice", { keys, choice })); showError(""); }
+  catch (e) { showError("Could not save your choice: " + e.message + ". Is the job board server still running?"); }
+}
+async function move(key, dir) {
+  const q = state.jobs.filter(j => j.status === "selected" || j.status === "applying").sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9)).map(j => j.key);
+  const i = q.indexOf(key), t = i + dir;
+  if (i < 0 || t < 0 || t >= q.length) return;
+  [q[i], q[t]] = [q[t], q[i]];
+  try { apply(await api("/api/order", { keys: q })); } catch (e) { showError("Could not reorder: " + e.message); }
+}
+
+document.addEventListener("click", e => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  if (t.dataset.tab) { state.tab = t.dataset.tab; render(); return; }
+  const act = t.dataset.act, key = t.dataset.key;
+  if (act === "more") { state.expanded.has(key) ? state.expanded.delete(key) : state.expanded.add(key); render(); }
+  else if (act === "up") move(key, -1);
+  else if (act === "down") move(key, 1);
+  else if (["selected", "skipped", "new"].includes(act)) { state.checked.delete(key); choose([key], act); }
+});
+document.addEventListener("change", e => {
+  const k = e.target.dataset && e.target.dataset.check;
+  if (k === undefined) return;
+  e.target.checked ? state.checked.add(k) : state.checked.delete(k);
+  render();
+});
+$("bulkSelect").onclick = () => { const k = [...state.checked]; state.checked.clear(); choose(k, "selected"); };
+$("bulkSkip").onclick = () => { const k = [...state.checked]; state.checked.clear(); choose(k, "skipped"); };
+$("bulkClear").onclick = () => { state.checked.clear(); render(); };
+["q", "sort", "source"].forEach(id => $(id).addEventListener("input", render));
+
+$("refresh").onclick = async () => {
+  const b = $("refresh");
+  b.disabled = true; b.textContent = "Refreshing…"; state.busy = true;
+  try {
+    const r = await api("/api/refresh", {});
+    $("outText").textContent = r.output || "(no output)";
+    $("out").hidden = false;
+    showError(r.ok ? "" : "The job feed reported a problem - see “Last refresh output” below.");
+    apply(r);
+  } catch (e) {
+    showError("Refresh failed: " + e.message);
+  } finally {
+    b.disabled = false; b.textContent = "Refresh jobs"; state.busy = false;
+  }
+};
+
+async function load() {
+  if (state.busy) return;
+  try { apply(await api("/api/jobs")); showError(""); }
+  catch (e) { showError("Cannot reach the job board server (" + e.message + "). Start it with: python jobboard.py"); }
+}
+load();
+setInterval(load, 20000); // picks up Claude's progress (applying / submitted) and new feed runs
+</script>
+</body>
+</html>
