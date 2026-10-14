@@ -30,6 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import applog  # same folder: log helpers
+import jobinfo  # same folder: salary / experience from the job text
 
 HERE = Path(__file__).resolve().parent
 PRIVATE = applog.PRIVATE
@@ -120,14 +121,31 @@ def status(j, log_jobs):
     return "new", None
 
 
+def card_facts(j):
+    """Salary + experience boxes on the job card; jobs saved before jobfeed.py stored them get them from the description."""
+    desc = j.get("description") or ""
+    salary = jobinfo.salary_from(j.get("salary") or "") or j.get("salary") or jobinfo.salary_from(desc)
+    exp = j.get("experience") or jobinfo.experience_from(desc, j.get("title", ""))
+    return {"salary": salary, "experience": exp}
+
+
+def experience_limits():
+    """experienceYears from the search requirements: within max = fit, up to stretchAt = stretch, above = too senior."""
+    try:
+        e = json.loads(CONFIG.read_text(encoding="utf-8")).get("experienceYears", {})
+    except (OSError, ValueError):
+        e = {}
+    return {"max": e.get("max", 2), "stretchAt": e.get("stretchAt", 3)}
+
+
 def view(board):
     """Jobs for the page: board entries + their current status from applications.json."""
     log_jobs = applog.load()["jobs"]
     out = []
     for j in board["jobs"].values():
         st, e = status(j, log_jobs)
-        out.append({**j, "status": st, "logNotes": (e or {}).get("notes", ""), "logUrl": (e or {}).get("url", ""),
-                    "logDate": (e or {}).get("date", "")})
+        out.append({**j, **card_facts(j), "status": st, "logNotes": (e or {}).get("notes", ""),
+                    "logUrl": (e or {}).get("url", ""), "logDate": (e or {}).get("date", "")})
     cfg = config()
     fetched = last_fetch()
     every = float(cfg.get("fetchEveryHours", 2))
@@ -136,7 +154,7 @@ def view(board):
             if every and FETCHER["running"] else None,
             "fetching": REFRESH_LOCK.locked(), "lastFetchError": FETCHER["error"]}
     return {"jobs": out, **meta, "requireSelection": cfg.get("requireSelection", True),
-            "queueCheckSeconds": cfg.get("queueCheckSeconds", 30)}
+            "queueCheckSeconds": cfg.get("queueCheckSeconds", 30), "experienceYears": experience_limits()}
 
 
 def last_fetch():
