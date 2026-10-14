@@ -196,9 +196,9 @@ function apply(data) {
   const next = data.nextFetchAt && !data.fetching ? ` · next automatic fetch ${until(data.nextFetchAt)}` : "";
   $("meta").textContent = `${state.jobs.length} jobs on the board · ${when}${next}`;
   if (data.lastFetchError && !state.busy) showError("The last automatic job fetch failed: " + data.lastFetchError);
-  const every = data.queueCheckMinutes;
+  const every = data.queueCheckSeconds;
   $("qhelp").textContent = every
-    ? `While Claude's job-search session is running, it starts on these jobs within about ${every} minutes, in this order, ` +
+    ? `While Claude's job-search session is running, it starts on these jobs within seconds of adding them, in this order, ` +
       `in a new Chrome tab per job. Jobs that need you (sign-in, CAPTCHA, unknown question) move to “Waiting on you” with their tab left open.`
     : "Claude applies to these jobs in this order at the next round. To start sooner, tell Claude “apply my selected jobs”.";
   const n = $("notice");
