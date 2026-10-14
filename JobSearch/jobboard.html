@@ -73,6 +73,16 @@
   .pill.done { background: var(--ok-soft); color: var(--ok); }
   .pill.wait { background: var(--warn-soft); color: var(--warn); }
   .pill.skip { background: var(--gray-soft); color: var(--muted); }
+  .facts { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 8px; margin: 8px 0 2px; }
+  .fact { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--gray-soft); min-width: 0; }
+  .fact .k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .fact .v { display: block; font-size: 14px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+  .fact .v.none { font-weight: 400; color: var(--muted); }
+  .fact .lvl { font-size: 12px; color: var(--muted); }
+  .fact.fit { background: var(--ok-soft); border-color: transparent; } .fact.fit .v { color: var(--ok); }
+  .fact.stretch { background: var(--warn-soft); border-color: transparent; } .fact.stretch .v { color: var(--warn); }
+  .fact.senior { background: var(--bad-soft); border-color: transparent; } .fact.senior .v { color: var(--bad); }
+  @media (max-width: 560px) { .facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
   .desc { color: var(--text); font-size: 13px; margin: 6px 0 2px; overflow-wrap: anywhere; }
   .desc.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .lognote { font-size: 12px; color: var(--muted); margin-top: 4px; }
@@ -150,7 +160,7 @@ const GROUPS = [
   { id: "skipped", label: "Skipped", match: s => s === "skipped" || s === "Skipped" },
   { id: "all", label: "All", match: () => true },
 ];
-const state = { jobs: [], tab: "review", checked: new Set(), expanded: new Set(), busy: false };
+const state = { jobs: [], tab: "review", checked: new Set(), expanded: new Set(), busy: false, expLimits: { max: 2, stretchAt: 3 } };
 const $ = id => document.getElementById(id);
 
 function esc(s) {
@@ -189,6 +199,7 @@ async function api(path, body) {
 function showError(msg) { const e = $("error"); e.textContent = msg; e.hidden = !msg; }
 
 function apply(data) {
+  if (data.experienceYears) state.expLimits = data.experienceYears;
   state.jobs = data.jobs || [];
   const keys = new Set(state.jobs.map(j => j.key));
   state.checked.forEach(k => { if (!keys.has(k)) state.checked.delete(k); });
@@ -262,6 +273,21 @@ function render() {
   $("bulkN").textContent = `${n} checked`;
 }
 
+function facts(j) {
+  const e = j.experience || {}, lim = state.expLimits;
+  const fit = e.years == null ? "" : e.years <= lim.max ? "fit" : e.years <= lim.stretchAt ? "stretch" : "senior";
+  const fitText = { fit: "fits your range", stretch: "stretch", senior: "too senior" }[fit] || "";
+  const level = [e.level, fitText].filter(Boolean).join(" · ");
+  return `<div class="facts">
+      <div class="fact"><span class="k">Salary</span>
+        <span class="v ${j.salary ? "" : "none"}">${esc(j.salary || "Not listed")}</span></div>
+      <div class="fact ${fit}" title="Required experience from the job description; colour vs experienceYears in your config">
+        <span class="k">Experience</span>
+        <span class="v ${e.text ? "" : "none"}">${esc(e.text || "Not stated")}</span>
+        ${level ? `<span class="lvl">${esc(level)}</span>` : ""}</div>
+    </div>`;
+}
+
 function card(j) {
   const s = j.status, k = esc(j.key);
   const posting = safeUrl(j.url), applyUrl = safeUrl(j.applyUrl);
@@ -291,10 +317,10 @@ function card(j) {
         <div class="sub">
           <span><b>${esc(j.company)}</b></span>
           <span>${esc(j.location || "location not given")}${j.remote ? " · remote" : ""}${j.checkLocation ? " · check location" : ""}</span>
-          ${j.salary ? `<span>${esc(j.salary)}</span>` : ""}
           <span>${esc(ago(j.posted))}</span>
           <span>${esc(j.source)}${via ? " · " + via : ""}</span>
         </div>
+        ${facts(j)}
         ${desc}
         ${j.logNotes ? `<div class="lognote">${s === "Needs User" ? "Needs you" : "Log"} (${esc(j.logDate)}): ${esc(j.logNotes)}</div>` : ""}
         <div class="actions">${buttons.join("")}</div>

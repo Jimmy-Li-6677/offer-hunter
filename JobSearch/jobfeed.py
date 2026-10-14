@@ -35,6 +35,7 @@ from pathlib import Path
 
 import applog  # same folder: log + .env helpers
 import jobboard  # same folder: the job board page's data (user's selected / skipped jobs)
+import jobinfo  # same folder: salary / experience from the job text
 
 PRIVATE = applog.PRIVATE
 CONFIG = PRIVATE / "job-search-config.json"
@@ -462,6 +463,8 @@ def main():
             d = j["description"]
             print("      " + (d[:220] + "..." if len(d) > 220 else d))
     for j in keep:  # full text for Claude to read; capped so the file stays small
+        j["salary"] = jobinfo.salary_from(j["salary"]) or j["salary"] or jobinfo.salary_from(j["description"])
+        j["experience"] = jobinfo.experience_from(j["description"], j["title"])  # from the full text, before the cap
         j["description"] = j["description"][:6000]
         j["posted"] = j["posted"].isoformat() if j["posted"] else None
     LATEST.write_text(json.dumps({"fetchedAt": now.isoformat(), "hours": hours, "jobs": keep},
