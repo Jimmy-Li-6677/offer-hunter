@@ -55,8 +55,11 @@ def norm(s):
 
 
 def matches(entry, company, role=None, job_id=None):
-    if job_id and job_id in {str(i) for i in entry.get("ids", [])}:
+    ids = {str(i) for i in entry.get("ids", [])}
+    if job_id and job_id in ids:
         return True
+    if job_id and ids:
+        return False  # both have job ids and they differ: a different posting, even if the title is similar
     ec, c = norm(entry["company"]), norm(company)
     if not c or not (c in ec or ec in c):
         return False
@@ -92,8 +95,9 @@ def row(e):
 def cmd_add(a):
     data = load()
     ids = [a.id] if a.id else []
-    entry = next((e for e in data["jobs"] if (a.id and a.id in e.get("ids", []))
-                  or (norm(e["company"]) == norm(a.company) and norm(e["role"]) == norm(a.role))), None)
+    entry = next((e for e in data["jobs"] if a.id and a.id in e.get("ids", [])), None) or next(
+        (e for e in data["jobs"] if norm(e["company"]) == norm(a.company) and norm(e["role"]) == norm(a.role)
+         and not (a.id and e.get("ids"))), None)  # both have job ids and they differ: a different posting
     fields = {"date": a.date or dt.date.today().isoformat(), "company": a.company, "role": a.role,
               "location": a.location, "status": a.status}
     if entry:
