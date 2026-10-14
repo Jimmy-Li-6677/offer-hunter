@@ -26,7 +26,7 @@ Files:
 - `..\private\.env` - private values, loaded by `StartJobSearch.exe` into the session environment:
   - `APPLICANT_*` (email, phone, address, LinkedIn/portfolio URLs), `SKIP_COMPANIES`, site usernames, bridge token.
   - `ANSWER_*` - the **answer bank** for application forms. Each entry has a `# Q: <question>` comment line above it. Read the whole file before every application; only ask the user about questions not covered, then save the new answer with `python applog.py answer ...`.
-  Files refer to .env values as `${NAME}`: read .env and substitute the real value when filling a form. Never copy .env values into other files or into applications.json; add new private values to `..\private\.env` (and the empty key to `..\examples\.env.example`) and reference them as `${NAME}`. The only stored password is `APPLICANT_ACCOUNT_PASSWORD` (job-site accounts, autoApplyLoop step 6b): type it only into a site's password fields - never print, log or copy it.
+  Files refer to .env values as `${NAME}`: read .env and substitute the real value when filling a form. Never copy .env values into other files or into applications.json; add new private values to `..\private\.env` (and the empty key to `..\examples\.env.example`) and reference them as `${NAME}`. The only stored password is `APPLICANT_PASSWORD` (job-site accounts, autoApplyLoop step 6b): type it only into a site's password fields - never print, log or copy it.
 
 ## Starting the session
 There are no timed rounds: the user clicks a search button on the job board, Claude searches in Chrome and adds candidates (step 2g), the user approves jobs into the apply queue, and Claude applies to the queue. When the user says "continue my job search" (or similar) at the start of a session:
