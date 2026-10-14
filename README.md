@@ -1,8 +1,8 @@
 # offer-hunter
 
-Let **Claude Code** run your job search: every few hours it searches LinkedIn and company career sites for new posts that match your rules, applies to clear matches on the company's own site with your answers and resume, and logs every job (with its link) for you to review.
+Let **Claude Code** run your job search: every few hours it pulls new posts from job APIs (company Greenhouse / Lever / Ashby boards, JSearch = Google for Jobs, Adzuna), with LinkedIn browsing as a fallback, keeps the ones that match your rules, applies to clear matches on the company's own site with your answers and resume, and logs every job (with its link) for you to review.
 
-- `JobSearch\` - Claude's working folder (`CLAUDE.md` = instructions for Claude, `applog.py` = application log + answer bank helper)
+- `JobSearch\` - Claude's working folder (`CLAUDE.md` = instructions for Claude, `applog.py` = application log + answer bank helper, `jobfeed.py` = job API fetcher)
 - `examples\` - templates for your private files
 - `private\` - **your** data (created by you, never committed)
 - `claude-browser-bridge\` - MCP server + Chrome extension that lets Claude use your own Chrome
@@ -32,7 +32,8 @@ Manual setup instead: `<repo>` = the folder you cloned into, e.g. `C:\Users\<use
    ```
    Then fill them in:
    - `private\.env` - your contact info (`APPLICANT_*`), companies to skip (`SKIP_COMPANIES`) and the `ANSWER_*` answer bank for application forms. Claude adds new answers here as you give them.
-   - `private\job-search-config.json` - roles, seniority, locations (LinkedIn geoIds), skip rules, loop interval.
+   - `private\job-search-config.json` - roles, seniority, locations (LinkedIn geoIds), skip rules, loop interval, and `jobFeed`: location patterns, company board slugs and search queries for the job APIs.
+   - Optional job API keys in `private\.env` (free tiers): `JSEARCH_API_KEY` (JSearch on rapidapi.com) and `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` (developer.adzuna.com). Without them only the company boards are searched. Check with `python jobfeed.py --plan` in `JobSearch\`.
    - `private\resume.json` - your resume as structured data; put the PDF next to it and set its path in `autoApplyLoop` step 4 of the config.
    - `private\applications.json` is created automatically on first use.
 3. **Set up the browser bridge** - follow [claude-browser-bridge/START_HERE.md](claude-browser-bridge/START_HERE.md) (build, load the Chrome extension, paste the token, `claude mcp add ...`).
@@ -44,7 +45,7 @@ Double-click `StartJobSearch.exe`. It validates your config, opens Chrome and st
 
 Without the launcher: `cd <repo>\JobSearch`, run `claude`, and say `continue my job search`.
 
-Useful commands (in `JobSearch\`): `python applog.py open` (jobs waiting on you), `python applog.py list --status Submitted`, `python applog.py list --no-link`.
+Useful commands (in `JobSearch\`): `python applog.py open` (jobs waiting on you), `python applog.py list --status Submitted`, `python applog.py list --no-link`, `python jobfeed.py` (new matching posts right now), `python jobfeed.py --plan` (API keys + request budget used).
 
 ## Privacy
 
