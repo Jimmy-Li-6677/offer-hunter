@@ -6,7 +6,9 @@ Build it once with `<repo>\launcher\build.cmd` (`<repo>` = the folder you cloned
    The `.env` must contain at least one `ANSWER_*` entry, the application answer bank, and a value for every
    `${NAME}` placeholder used in the config. All `.env` values are loaded into the Claude Code session's environment.
 2. Start Chrome if it isn't running (`launcher.startChrome`, `launcher.chromePath`).
-3. Open Claude Code in `JobSearch\` with a prompt that starts the job-search loop using the config's
+3. Start the job board page (`JobSearch\jobboard.py`, with `pythonw.exe` so no console window opens) unless it is already
+   running, and open `http://127.0.0.1:<jobBoard.port>` in Chrome (`jobBoard.openOnStart`; needs Python on PATH).
+4. Open Claude Code in `JobSearch\` with a prompt that starts the job-search loop using the config's
    requirements, the browser tool in `launcher.browserTool`, and `--permission-mode` from
    `launcher.claudePermissionMode` (set it to `""` to be asked for every permission).
 

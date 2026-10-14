@@ -103,6 +103,32 @@ static class StartJobSearch
             System.Threading.Thread.Sleep(3000); // let the extension load
         }
 
+        // ---- Job board page (JobSearch\jobboard.py): the user picks which jobs Claude applies to ----
+        var jobBoard = config.ContainsKey("jobBoard") ? (Dictionary<string, object>)config["jobBoard"] : null;
+        int boardPort = jobBoard == null ? 0 : Convert.ToInt32(Get(jobBoard, "port", "8766"));
+        bool openBoard = jobBoard != null && Get(jobBoard, "openOnStart", "true").ToLower() == "true"
+                         && File.Exists(Path.Combine(jobDir, "jobboard.py"));
+        string boardUrl = "http://127.0.0.1:" + boardPort + "/";
+        string python = openBoard ? FindOnPath("pythonw.exe", "python.exe") : null;
+        if (openBoard && python == null)
+            throw new Exception("Python not found on PATH - it is needed for the job board (jobBoard.openOnStart).\n" +
+                                "Install Python 3 or set jobBoard.openOnStart to false in job-search-config.json.");
+        if (openBoard && !dryRun)
+        {
+            if (!PortOpen(boardPort))
+            {
+                Process.Start(new ProcessStartInfo(python, "jobboard.py serve --no-browser")
+                {
+                    WorkingDirectory = jobDir,
+                    UseShellExecute = false,
+                    CreateNoWindow = true, // runs in the background; stops when Windows signs out
+                });
+                for (int i = 0; i < 25 && !PortOpen(boardPort); i++) System.Threading.Thread.Sleep(200);
+            }
+            if (File.Exists(chromePath)) Process.Start(chromePath, boardUrl);
+            else Process.Start(boardUrl);
+        }
+
         // ---- Claude Code ----
         string claude = FindClaude();
         string interval = intervalHours == Math.Floor(intervalHours) ? intervalHours + "h" : (int)(intervalHours * 60) + "m";
@@ -116,7 +142,10 @@ static class StartJobSearch
             "; posted within " + postedHours + "h). The application answer bank is the " + answerCount + " ANSWER_* entries in " + envPath +
             " (read that file; it also holds the APPLICANT_* contact values that fill ${NAME} placeholders; they are loaded into this session's environment too). " +
             "Follow CLAUDE.md 'Starting the loop' and the " + steps.Count + " steps in its autoApplyLoop section, with loop interval " + interval +
-            ". Use " + browserText + " in Google Chrome for all browsing.";
+            ". Use " + browserText + " in Google Chrome for all browsing." +
+            (jobBoard == null ? "" :
+                " The user picks the jobs to apply to on the job board page " + boardUrl +
+                " (autoApplyLoop step 2s): apply only to the jobs listed by python jobboard.py queue, in that order.");
 
         var args = new List<string>();
         if (permissionMode != "") args.Add("--permission-mode " + Quote(permissionMode));
@@ -126,6 +155,8 @@ static class StartJobSearch
         {
             Console.WriteLine("cwd:    " + jobDir);
             Console.WriteLine("chrome: " + (startChrome ? chromePath : "(not started)"));
+            Console.WriteLine("board:  " + (openBoard ? python + " jobboard.py serve --no-browser -> " + boardUrl +
+                                            (PortOpen(boardPort) ? " (already running)" : "") : "(not opened)"));
             Console.WriteLine("env:    " + env.Count + " values loaded from " + envPath + " (" + answerCount + " ANSWER_*)");
             Console.WriteLine("run:    " + claude + " " + string.Join(" ", args));
             return;
@@ -155,6 +186,32 @@ static class StartJobSearch
             env[key] = value;
         }
         return env;
+    }
+
+    static string FindOnPath(params string[] names)
+    {
+        foreach (var name in names)
+            foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';'))
+            {
+                try
+                {
+                    string p = Path.Combine(dir.Trim(), name);
+                    // skip the Microsoft Store "python.exe" alias, which only opens the Store
+                    if (File.Exists(p) && !p.Contains(@"\Microsoft\WindowsApps\")) return p;
+                }
+                catch (ArgumentException) { }
+            }
+        return null;
+    }
+
+    static bool PortOpen(int port)
+    {
+        try
+        {
+            using (var c = new System.Net.Sockets.TcpClient())
+                return c.ConnectAsync("127.0.0.1", port).Wait(300) && c.Connected;
+        }
+        catch { return false; }
     }
 
     static string FindJobSearchDir(string baseDir)

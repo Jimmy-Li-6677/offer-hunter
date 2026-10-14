@@ -1,8 +1,8 @@
 # offer-hunter
 
-Let **Claude Code** run your job search: every few hours it pulls new posts from job APIs (company Greenhouse / Lever / Ashby boards, JSearch = Google for Jobs, Adzuna), with LinkedIn browsing as a fallback, keeps the ones that match your rules, applies to clear matches on the company's own site with your answers and resume, and logs every job (with its link) for you to review.
+Let **Claude Code** run your job search: every few hours it pulls new posts from job APIs (company Greenhouse / Lever / Ashby boards, JSearch = Google for Jobs, Adzuna), with LinkedIn browsing as a fallback, keeps the ones that match your rules and lists them on a local **job board** page where you pick which ones to apply to, applies to your picks on the company's own site with your answers and resume, and logs every job (with its link) for you to review.
 
-- `JobSearch\` - Claude's working folder (`CLAUDE.md` = instructions for Claude, `applog.py` = application log + answer bank helper, `jobfeed.py` = job API fetcher)
+- `JobSearch\` - Claude's working folder (`CLAUDE.md` = instructions for Claude, `applog.py` = application log + answer bank helper, `jobfeed.py` = job API fetcher, `jobboard.py` + `jobboard.html` = job board page)
 - `examples\` - templates for your private files
 - `private\` - **your** data (created by you, never committed)
 - `claude-browser-bridge\` - MCP server + Chrome extension that lets Claude use your own Chrome
@@ -41,11 +41,13 @@ Manual setup instead: `<repo>` = the folder you cloned into, e.g. `C:\Users\<use
 
 ## Daily use
 
-Double-click `StartJobSearch.exe`. It validates your config, opens Chrome and starts Claude Code with "continue my job search". Claude then runs one round every `loop.intervalHours` hours while the session is open, and asks you only for things it can't do itself (passwords, CAPTCHAs, verification codes, questions not in your answer bank).
+Double-click `StartJobSearch.exe`. It validates your config, opens Chrome, opens the job board page (`http://127.0.0.1:8766`) and starts Claude Code with "continue my job search". Claude then runs one round every `loop.intervalHours` hours while the session is open, and asks you only for things it can't do itself (passwords, CAPTCHAs, verification codes, questions not in your answer bank).
 
-Without the launcher: `cd <repo>\JobSearch`, run `claude`, and say `continue my job search`.
+**Job board page:** every new matching post shows up there with its title, company, location, salary, posted time, source, description and links. Click **Add to apply queue** on the jobs you want (reorder the queue on the right) or **Skip** the ones you don't - skipped jobs never come back. Claude applies only to the jobs in your queue, in that order, at the next round (or right away if you tell it "apply my selected jobs"), and each job's status (applying, submitted, waiting on you) updates on the page. **Refresh jobs** runs the job feed immediately. To let Claude also apply to clear matches you haven't picked, set `jobBoard.requireSelection` to `false`.
 
-Useful commands (in `JobSearch\`): `python applog.py open` (jobs waiting on you), `python applog.py list --status Submitted`, `python applog.py list --no-link`, `python jobfeed.py` (new matching posts right now), `python jobfeed.py --plan` (API keys + request budget used).
+Without the launcher: `cd <repo>\JobSearch`, run `python jobboard.py` (opens the page) and `claude`, and say `continue my job search`.
+
+Useful commands (in `JobSearch\`): `python applog.py open` (jobs waiting on you), `python applog.py list --status Submitted`, `python applog.py list --no-link`, `python jobfeed.py` (new matching posts right now), `python jobfeed.py --plan` (API keys + request budget used), `python jobboard.py` (job board page), `python jobboard.py queue` (your apply queue).
 
 ## Privacy
 

@@ -34,6 +34,7 @@ import urllib.request
 from pathlib import Path
 
 import applog  # same folder: log + .env helpers
+import jobboard  # same folder: the job board page's data (user's selected / skipped jobs)
 
 PRIVATE = applog.PRIVATE
 CONFIG = PRIVATE / "job-search-config.json"
@@ -338,7 +339,10 @@ def filter_jobs(jobs, fc, hours, skip_companies, logged, now):
         if j["country"].lower() not in us:  # e.g. "CA-Ontario-Toronto" would otherwise match the California pattern
             return "outside the US"
         remote_us = j["remote"] and not (non_us and non_us.search(j["location"]))
-        if not remote_us and not (loc_in and loc_in.search(j["location"])):
+        # multi-location posts ("Toronto, CA / San Mateo, CA"): one target-area location without a foreign name is enough
+        parts = re.split(r"\s*[;/|]\s*|\s+or\s+", j["location"])
+        in_area = any(loc_in and loc_in.search(p) and not (non_us and non_us.search(p)) for p in parts)
+        if not remote_us and not in_area:
             if not (vague and vague.fullmatch(j["location"].strip())):
                 return "location not in target areas"
             j["checkLocation"] = True  # board gives no city ("Hybrid", "In-Office"): keep, verify on the posting
@@ -429,6 +433,10 @@ def main():
     now = dt.datetime.now(UTC)
     skip = env.get("SKIP_COMPANIES", "").split(",")
     keep, rejected = filter_jobs(jobs, fc, hours, skip, applog.load()["jobs"], now)
+    board = jobboard.load_board()
+    skipped = {k for k, j in board["jobs"].items() if j.get("choice") == "skipped"}
+    rejected += [{**j, "reason": "skipped by the user on the job board"} for j in keep if jobboard.job_key(j) in skipped]
+    keep = [j for j in keep if jobboard.job_key(j) not in skipped]
 
     if a.rejected:
         counts = {}
@@ -455,8 +463,17 @@ def main():
             print("      " + (d[:220] + "..." if len(d) > 220 else d))
     for j in keep:  # full text for Claude to read; capped so the file stays small
         j["description"] = j["description"][:6000]
+        j["posted"] = j["posted"].isoformat() if j["posted"] else None
     LATEST.write_text(json.dumps({"fetchedAt": now.isoformat(), "hours": hours, "jobs": keep},
                                  indent=2, default=str, ensure_ascii=False) + "\n", encoding="utf-8")
+    with jobboard.LOCK:  # every new job also goes on the job board page for the user to pick from
+        board = jobboard.load_board()
+        added = jobboard.sync_latest(board)
+        jobboard.prune(board, applog.load()["jobs"])
+        jobboard.save_board(board)
+    if keep:
+        print(f"Job board: {added} added, {len(keep) - added} already listed - the user picks what to apply to "
+              f"(python jobboard.py queue).")
 
 
 if __name__ == "__main__":
