@@ -64,11 +64,19 @@ def parse_time(v):
 
 
 def job(source, company, title, location, url, posted=None, apply_url=None, remote=False, job_id=None,
-        salary="", publisher="", direct=True, country=""):
+        salary="", publisher="", direct=True, country="", description="", board=""):
     return {"source": source, "id": str(job_id or ""), "company": (company or "").strip(), "title": (title or "").strip(),
             "location": (location or "").strip(), "remote": bool(remote), "posted": posted, "url": url or apply_url or "",
             "applyUrl": apply_url or url or "", "salary": salary, "publisher": publisher, "direct": direct,
-            "country": (country or "").strip()}
+            "country": (country or "").strip(), "description": re.sub(r"\s+", " ", description or "").strip(), "board": board}
+
+
+def text_of(markup):
+    """HTML (possibly entity-escaped, as Greenhouse sends it) -> plain text on one line."""
+    s = html.unescape(html.unescape(markup or ""))
+    s = re.sub(r"<(br|/p|/li|/h\d|/div)[^>]*>", " ", s, flags=re.I)
+    s = re.sub(r"<[^>]+>", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
 
 
 def real_items(items):
@@ -136,7 +144,8 @@ def fetch_greenhouse(slug):
     for j in d.get("jobs", []):
         loc = (j.get("location") or {}).get("name", "")
         out.append(job("greenhouse", j.get("company_name") or slug, j.get("title"), loc, j.get("absolute_url"),
-                       parse_time(j.get("first_published")), remote="remote" in loc.lower(), job_id=j.get("id")))
+                       parse_time(j.get("first_published")), remote="remote" in loc.lower(), job_id=j.get("id"),
+                       board=slug))  # description: fetched later for kept jobs only (add_descriptions)
     return out
 
 
@@ -148,7 +157,8 @@ def fetch_lever(slug):
         loc = " / ".join(cat.get("allLocations") or [cat.get("location") or ""])
         out.append(job("lever", slug, j.get("text"), loc, j.get("hostedUrl"), parse_time(j.get("createdAt")),
                        apply_url=j.get("applyUrl"), remote=(j.get("workplaceType") == "remote" or "remote" in loc.lower()),
-                       job_id=j.get("id"), country=j.get("country") or ""))
+                       job_id=j.get("id"), country=j.get("country") or "",
+                       description=j.get("descriptionPlain") or text_of(j.get("description"))))
     return out
 
 
@@ -165,11 +175,28 @@ def fetch_ashby(slug):
         out.append(job("ashby", slug, j.get("title"), loc, j.get("jobUrl"), parse_time(j.get("publishedAt")),
                        apply_url=j.get("applyUrl"),
                        remote=bool(j.get("isRemote")) or j.get("workplaceType") == "Remote" or "remote" in loc.lower(),
-                       job_id=j.get("id"), salary=comp, country=addr.get("addressCountry", "")))
+                       job_id=j.get("id"), salary=comp, country=addr.get("addressCountry", ""),
+                       description=j.get("descriptionPlain") or text_of(j.get("descriptionHtml"))))
     return out
 
 
 ATS_FETCHERS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby}
+
+
+def add_descriptions(jobs, log):
+    """Greenhouse's board list has no descriptions; fetch them for the (few) kept jobs only."""
+    todo = [j for j in jobs if not j["description"] and j["source"] == "greenhouse" and j["board"] and j["id"]]
+
+    def one(j):
+        d = http_json(f"https://boards-api.greenhouse.io/v1/boards/{j['board']}/jobs/{j['id']}")
+        j["description"] = text_of(d.get("content"))
+
+    with cf.ThreadPoolExecutor(8) as ex:
+        for f in [ex.submit(one, j) for j in todo]:
+            try:
+                f.result()
+            except Exception as e:  # a missing description must not stop the round
+                log(f"  ! description not loaded: {e}")
 
 
 def source_ats(cfg, budget_state, log):
@@ -233,7 +260,7 @@ def source_jsearch(cfg, state, log, env, hours):
                             j.get("job_apply_link"), parse_time(j.get("job_posted_at_datetime_utc")), apply_url=apply,
                             remote=j.get("job_is_remote"), job_id=j.get("job_id"), salary=sal,
                             publisher=j.get("job_publisher") or "", direct=bool(direct) or bool(j.get("job_apply_is_direct")),
-                            country=j.get("job_country") or ""))
+                            country=j.get("job_country") or "", description=j.get("job_description") or ""))
         log(f"jsearch: '{q}' -> {len(rows)} jobs")
         done += 1
     budget.advance(done, len(queries))
@@ -274,7 +301,7 @@ def source_adzuna(cfg, state, log, env, hours):
             loc = (j.get("location") or {}).get("display_name", "")
             jobs.append(job("adzuna", (j.get("company") or {}).get("display_name"), html.unescape(j.get("title", "")), loc,
                             j.get("redirect_url"), parse_time(j.get("created")), remote="remote" in (j.get("title", "") + loc).lower(),
-                            job_id=j.get("id"), salary=sal, publisher="adzuna", direct=False,
+                            job_id=j.get("id"), salary=sal, publisher="adzuna", direct=False, description=text_of(j.get("description")),
                             country=cfg.get("country", "us")))
         log(f"adzuna: '{what}' {where or '(anywhere)'} -> {len(rows)} jobs")
         done += 1
@@ -308,7 +335,9 @@ def filter_jobs(jobs, fc, hours, skip_companies, logged, now):
             return "title not a target role"
         if title_out and title_out.search(j["title"]):
             return "title excluded (seniority/type)"
-        remote_us = j["remote"] and j["country"].lower() in us and not (non_us and non_us.search(j["location"]))
+        if j["country"].lower() not in us:  # e.g. "CA-Ontario-Toronto" would otherwise match the California pattern
+            return "outside the US"
+        remote_us = j["remote"] and not (non_us and non_us.search(j["location"]))
         if not remote_us and not (loc_in and loc_in.search(j["location"])):
             if not (vague and vague.fullmatch(j["location"].strip())):
                 return "location not in target areas"
@@ -409,13 +438,23 @@ def main():
         for r in rejected:
             if r["reason"] not in ("older than window", "title not a target role"):
                 print(f'  - [{r["reason"]}] {r["company"]} | {r["title"]} | {r["location"]} | {r["url"]}')
-    print(f"{len(keep)} new matching jobs posted in the last {hours:g}h (of {len(jobs)} fetched):")
+    add_descriptions(keep, log)
+    if not keep:
+        print(f"No new matching jobs posted in the last {hours:g}h ({len(jobs)} fetched). "
+              "Run with --rejected to see why jobs were filtered out, or --hours 48 for a wider window.")
+    else:
+        print(f"{len(keep)} new matching jobs posted in the last {hours:g}h (of {len(jobs)} fetched):")
     for i, j in enumerate(keep, 1):
         flags = " ".join(x for x in ("REMOTE" if j["remote"] else "", "CHECK-LOCATION" if j.get("checkLocation") else "",
                                      "" if j["direct"] else f"via {j['publisher'] or j['source']}") if x)
         print(f'{i:>3}. [{age(j["posted"], now):>5}] {j["company"]} | {j["title"]} | {j["location"]}'
               f'{" | " + j["salary"] if j["salary"] else ""}{" | " + flags if flags else ""}\n'
               f'      {j["applyUrl"]}')
+        if j["description"]:
+            d = j["description"]
+            print("      " + (d[:220] + "..." if len(d) > 220 else d))
+    for j in keep:  # full text for Claude to read; capped so the file stays small
+        j["description"] = j["description"][:6000]
     LATEST.write_text(json.dumps({"fetchedAt": now.isoformat(), "hours": hours, "jobs": keep},
                                  indent=2, default=str, ensure_ascii=False) + "\n", encoding="utf-8")
 
