@@ -1,13 +1,15 @@
 """Job board - a local web page to review the job posts from jobfeed.py and pick which ones to apply to.
 
-Every job jobfeed.py finds is added to ../private/job-board.json. The page lists them; the user selects jobs
-(and orders them) or skips them. Claude applies only to the selected jobs (autoApplyLoop step 2s), in order,
+While it runs, the server fetches new jobs (jobfeed.py) every jobBoard.fetchEveryHours hours and when the user clicks
+Refresh jobs; every job found is added to ../private/job-board.json. The page lists them; the user selects jobs
+(and orders them) or skips them. Claude applies only to the selected jobs (autoApplyLoop steps 2s / 2q), in order,
 and logs each one in applications.json - the page shows that log status.
 
 Usage (from the JobSearch folder):
   python jobboard.py                  -> start the page at http://127.0.0.1:<jobBoard.port> (default 8766) and open it
   python jobboard.py serve [--no-browser]
   python jobboard.py queue            -> selected jobs still to apply to, in the user's order (exit 1 if none)
+  python jobboard.py queue --quiet    -> one line for the queue watcher: "<n> jobs in the apply queue" (exit 0) / "apply queue empty" (exit 1)
   python jobboard.py applying <key>   -> mark a queued job as being applied to now (shown on the page)
   python jobboard.py sync             -> add the jobs from ../private/jobfeed-latest.json to the board
 
@@ -123,11 +125,23 @@ def view(board):
         st, e = status(j, log_jobs)
         out.append({**j, "status": st, "logNotes": (e or {}).get("notes", ""), "logUrl": (e or {}).get("url", ""),
                     "logDate": (e or {}).get("date", "")})
-    meta = {}
-    if LATEST.exists():
-        latest = json.loads(LATEST.read_text(encoding="utf-8"))
-        meta = {"fetchedAt": latest.get("fetchedAt"), "hours": latest.get("hours")}
-    return {"jobs": out, **meta, "requireSelection": config().get("requireSelection", True)}
+    cfg = config()
+    fetched = last_fetch()
+    every = float(cfg.get("fetchEveryHours", 2))
+    meta = {"fetchedAt": fetched.isoformat() if fetched else None, "fetchEveryHours": every,
+            "nextFetchAt": ((fetched or dt.datetime.now(dt.timezone.utc)) + dt.timedelta(hours=every)).isoformat()
+            if every and FETCHER["running"] else None,
+            "fetching": REFRESH_LOCK.locked(), "lastFetchError": FETCHER["error"]}
+    return {"jobs": out, **meta, "requireSelection": cfg.get("requireSelection", True),
+            "queueCheckMinutes": cfg.get("queueCheckMinutes", 10)}
+
+
+def last_fetch():
+    """When jobfeed.py last ran (by the page, the timer or by hand)."""
+    try:
+        return dt.datetime.fromisoformat(json.loads(LATEST.read_text(encoding="utf-8"))["fetchedAt"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def queue(board):
@@ -171,6 +185,36 @@ def run_jobfeed():
         return False, "jobfeed.py did not finish within 10 minutes."
     finally:
         REFRESH_LOCK.release()
+
+
+def fetch_and_sync():
+    """Run the job feed and put its jobs on the board. Used by Refresh jobs and the automatic timer."""
+    ok, out = run_jobfeed()
+    FETCHER["error"] = None if ok else (out.splitlines() or ["job feed failed"])[-1]
+    with LOCK:
+        board = load_board()
+        sync_latest(board)
+        prune(board, applog.load()["jobs"])
+        save_board(board)
+    return ok, out, board
+
+
+FETCHER = {"running": False, "error": None}
+
+
+def auto_fetch():
+    """Background timer: fetch new jobs every jobBoard.fetchEveryHours (re-read each minute; 0 = only on Refresh)."""
+    FETCHER["running"] = True
+    while True:
+        every = float(config().get("fetchEveryHours", 2))
+        last = last_fetch()
+        due = every > 0 and (last is None or dt.datetime.now(dt.timezone.utc) - last >= dt.timedelta(hours=every))
+        if due and not REFRESH_LOCK.locked():
+            try:
+                fetch_and_sync()
+            except Exception as e:  # never let the timer die
+                FETCHER["error"] = str(e)
+        threading.Event().wait(60)
 
 
 # ---------- web server ----------
@@ -228,12 +272,7 @@ class Handler(BaseHTTPRequestHandler):
                 save_board(board)
             return self.send(200, view(board))
         if self.path == "/api/refresh":
-            ok, out = run_jobfeed()
-            with LOCK:
-                board = load_board()
-                sync_latest(board)
-                prune(board, applog.load()["jobs"])
-                save_board(board)
+            ok, out, board = fetch_and_sync()
             return self.send(200, {"ok": ok, "output": out, **view(board)})
         self.send(404, {"error": "not found"})
 
@@ -249,6 +288,7 @@ def serve(open_browser=True):
             webbrowser.open(url)
         return
     print(f"Job board: {url}  (Ctrl+C to stop)")
+    threading.Thread(target=auto_fetch, daemon=True).start()
     if open_browser:
         threading.Timer(0.5, webbrowser.open, [url]).start()
     try:
@@ -265,7 +305,8 @@ def main():
     sub = ap.add_subparsers(dest="cmd")
     s = sub.add_parser("serve")
     s.add_argument("--no-browser", action="store_true")
-    sub.add_parser("queue")
+    qp = sub.add_parser("queue")
+    qp.add_argument("--quiet", action="store_true")
     ap_ = sub.add_parser("applying")
     ap_.add_argument("key")
     sub.add_parser("sync")
@@ -281,6 +322,9 @@ def main():
             print(f"{n} new jobs added to the board ({len(board['jobs'])} total)")
         elif a.cmd == "queue":
             q = queue(board)
+            if a.quiet:  # queue watcher: one line, exit code says whether there is work
+                print(f"{len(q)} job{'' if len(q) == 1 else 's'} in the apply queue" if q else "apply queue empty")
+                sys.exit(0 if q else 1)
             if not q:
                 waiting = sum(1 for j in board["jobs"].values() if j.get("choice") == "new")
                 print(f"No selected jobs waiting. {waiting} new jobs are on the board for the user to review.")

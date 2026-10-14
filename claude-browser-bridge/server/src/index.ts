@@ -128,9 +128,11 @@ let nextId = 1;
 const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
 
 const wss = new WebSocketServer({ host: "127.0.0.1", port: config.port });
+let portTaken = false; // another Claude session's bridge owns the port: the extension talks to that one, not to us
 
 wss.on("error", (err: NodeJS.ErrnoException) => {
   if (err.code === "EADDRINUSE") {
+    portTaken = true;
     log(`Port ${config.port} is already in use (another bridge server running?). Browser tools will fail.`);
   } else {
     log("WebSocket server error:", err.message);
@@ -177,6 +179,16 @@ wss.on("connection", (socket, req) => {
 
 function sendCommand(cmd: string, args: Record<string, unknown> = {}, timeoutMs = 30000): Promise<any> {
   return new Promise((resolve, reject) => {
+    if (portTaken) {
+      reject(
+        new Error(
+          `Another Claude Code session already runs the browser bridge (port ${config.port}), so Chrome is connected to ` +
+            "that session, not this one. Only one job-search session can use Chrome at a time: close the other Claude " +
+            "window (or keep working there), then restart this session."
+        )
+      );
+      return;
+    }
     if (!extensionSocket || extensionSocket.readyState !== WebSocket.OPEN) {
       reject(
         new Error(
@@ -206,7 +218,7 @@ const text = (value: unknown): ToolResult => ({
 });
 
 // Errors that will not go away by retrying.
-const NON_RETRYABLE = [/Site not allowed/i, /Unknown command/i, /Invalid URL/i, /Provide ref or x,y/i, /No option matching/i, /No tab with id/i];
+const NON_RETRYABLE = [/Site not allowed/i, /Another Claude Code session/i, /Unknown command/i, /Invalid URL/i, /Provide ref or x,y/i, /No option matching/i, /No tab with id/i];
 const MAX_ATTEMPTS = 3;
 
 async function run(cmd: string, args: Record<string, unknown>, timeoutMs?: number): Promise<ToolResult> {
