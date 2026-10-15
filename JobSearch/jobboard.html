@@ -142,6 +142,7 @@
     <button class="primary" data-search="google" title="Claude searches Google Jobs in a new Chrome tab and adds about 10 candidates here">Search Google Jobs</button>
     <button id="answersBtn" title="Upload your resume and review the answers Claude uses on application forms">Update my answers</button>
     <button class="primary" data-search="linkedin" title="Claude searches LinkedIn in a new Chrome tab and adds about 10 candidates here">Search LinkedIn</button>
+    <button class="primary" data-search="simplify" title="Adds about 10 new-grad jobs from the SimplifyJobs GitHub list (github.com/SimplifyJobs/New-Grad-Positions) that pass your search filters">Search SimplifyJobs</button>
   </div>
   <div class="bar" style="padding-top:0">
     <label class="sr" for="q">Search</label>
@@ -310,7 +311,8 @@ function apply(data) {
 }
 
 // Search buttons: the request goes to Claude's session (queue watcher); Claude searches in Chrome and adds candidates here.
-const SOURCES = { google: "Google Jobs", linkedin: "LinkedIn" };
+const SOURCES = { google: "Google Jobs", linkedin: "LinkedIn", simplify: "SimplifyJobs" };
+const SELF_SEARCH = ["simplify"];  // fetched by the job board itself, not by Claude in Chrome
 function showSearches(reqs) {
   const open = reqs.filter(r => r.status === "requested" || r.status === "running");
   document.querySelectorAll("[data-search]").forEach(b => {
@@ -321,7 +323,8 @@ function showSearches(reqs) {
   let msg = "";
   if (open.length) {
     msg = open.map(r => r.status === "running"
-      ? `Claude is searching ${SOURCES[r.source]} in Chrome${r.note ? " - " + r.note : ""}…`
+      ? (SELF_SEARCH.includes(r.source) ? `Fetching the ${SOURCES[r.source]} new-grad list…`
+         : `Claude is searching ${SOURCES[r.source]} in Chrome${r.note ? " - " + r.note : ""}…`)
       : `Waiting for Claude to start the ${SOURCES[r.source]} search (requested ${ago(r.requestedAt)})` +
         (Date.now() - new Date(r.requestedAt).getTime() > 3 * 60000 ? " - is Claude's job-search session running?" : "") + "…").join(" ");
   } else if (last && Date.now() - new Date(last.doneAt || last.failedAt || last.requestedAt).getTime() < 30 * 60000) {
@@ -384,7 +387,7 @@ function render() {
 
   const list = filtered();
   if (!state.jobs.length) {
-    $("list").innerHTML = `<div class="empty">No jobs on the board yet.<br>Click <b>Search Google Jobs</b> or <b>Search LinkedIn</b> - Claude finds about 10 candidates for you to approve.</div>`;
+    $("list").innerHTML = `<div class="empty">No jobs on the board yet.<br>Click <b>Search Google Jobs</b>, <b>Search LinkedIn</b> or <b>Search SimplifyJobs</b> - Claude finds about 10 candidates for you to approve.</div>`;
   } else if (!list.length) {
     const msg = state.hiddenCount ? `All ${state.hiddenCount} jobs in this view are hidden by your location / salary / filter choices.`
       : state.tab === "review" ? "Nothing new to review. Click a search button for new candidates." : "No jobs in this view.";
