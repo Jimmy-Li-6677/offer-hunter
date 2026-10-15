@@ -6,6 +6,8 @@ it; Claude then searches in a new Chrome tab, picks about 10 candidates (autoApp
 `python jobboard.py add <file.json> --search <id>`. The user approves jobs by putting them in the apply queue (in
 order) or skips them. Claude applies only to the queued jobs (autoApplyLoop steps 2s / 2q), in order, and logs each one
 in applications.json - the page shows that log status.
+The "Search SimplifyJobs" button is handled by this server itself (simplifyjobs.py, the SimplifyJobs new-grad GitHub
+list) - no Claude search; its request goes straight to "running", so the watcher does not announce it.
 
 Usage (from the JobSearch folder):
   python jobboard.py                  -> start the page at http://127.0.0.1:<jobBoard.port> (default 8766) and open it
@@ -209,19 +211,44 @@ def reorder(board, keys):
 
 
 # ---------- search requests (the page's search buttons; Claude does the search in Chrome) ----------
-SEARCH_SOURCES = {"google": "Google Jobs", "linkedin": "LinkedIn"}
+SEARCH_SOURCES = {"google": "Google Jobs", "linkedin": "LinkedIn", "simplify": "SimplifyJobs"}
+SELF_SEARCH = {"simplify"}  # searched by this server itself (simplifyjobs.py), not by Claude in Chrome
 OPEN_SEARCH = ("requested", "running")
 
 
 def request_search(board, source):
     """Add a search request, unless one for the same source is still open."""
     reqs = board.setdefault("searches", [])
+    stale = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=10)
+    for r in reqs:  # a server-side search cut off by a server restart never finishes
+        if r["source"] in SELF_SEARCH and r["status"] == "running" and dt.datetime.fromisoformat(r["requestedAt"]) < stale:
+            r["status"], r["note"] = "failed", "interrupted (job board restarted)"
     if any(r["source"] == source and r["status"] in OPEN_SEARCH for r in reqs):
         return None
-    r = {"id": f"s{len(reqs) + 1}", "source": source, "status": "requested", "requestedAt": now_iso(), "note": ""}
+    status = "running" if source in SELF_SEARCH else "requested"  # the watcher announces only "requested" ones
+    r = {"id": f"s{len(reqs) + 1}", "source": source, "status": status, "requestedAt": now_iso(), "note": ""}
     reqs.append(r)
     del reqs[:-50]  # keep the last 50
     return r
+
+
+def run_simplify(sid):
+    """Background thread for the "Search SimplifyJobs" button: fetch the SimplifyJobs new-grad list and add candidates."""
+    import simplifyjobs  # same folder
+    try:
+        with LOCK:
+            board_jobs = load_board()["jobs"]
+        jobs, step, hours = simplifyjobs.run(board_jobs)
+        with LOCK:
+            board = load_board()
+            n = merge(board, jobs)
+            set_search(board, sid, "done", note=f"SimplifyJobs new-grad list, last {hours:g}h (widen step {step})", found=n)
+            save_board(board)
+    except Exception as e:  # network / format errors: show them on the page
+        with LOCK:
+            board = load_board()
+            set_search(board, sid, "failed", note=f"{type(e).__name__}: {e}")
+            save_board(board)
 
 
 def set_search(board, sid, status, note=None, found=None):
@@ -409,8 +436,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(400, {"error": "source must be " + " or ".join(SEARCH_SOURCES)})
             with LOCK:
                 board = load_board()
-                request_search(board, body["source"])
+                r = request_search(board, body["source"])
                 save_board(board)
+            if r and r["source"] in SELF_SEARCH:
+                threading.Thread(target=run_simplify, args=(r["id"],), daemon=True).start()
             return self.send(200, view(board))
         self.send(404, {"error": "not found"})
 
