@@ -24,6 +24,7 @@ FILTERS = [
     ("internship", "Internship", "jobFeed (schedule)"),
     ("experience", "Requires too many years", "experienceYears.max / skip: 3+ years"),
     ("level", "Senior / staff / lead level", "jobFeed.experienceFilter"),
+    ("lowPay", "Pay below your salary expectation", "salaryExpectation"),
     ("clearance", "Active clearance required", "skip: active security clearance"),
     ("cbp", "CBP (Customs and Border Protection) work", "skip: CBP work"),
     ("grad2027", "2027-grad-only program", "skip: 2027-grad-only programs"),
@@ -70,6 +71,7 @@ def context(cfg=None, env=None, log_jobs=None, skipped_keys=(), hours=None, max_
     return {
         "areas": areas,
         "fc": fc, "now": now or dt.datetime.now(UTC),
+        "payExpect": cfg.get("salaryExpectation") or {},
         "hours": hours or fc.get("postedWithinHours") or cfg.get("postedWithinHours", 24), "maxYears": max_years,
         "titleIn": compile_any(fc.get("titleInclude", [])), "titleOut": compile_any(fc.get("titleExclude", [])),
         "locIn": compile_any(fc.get("locationInclude", [])), "nonUs": compile_any(fc.get("remoteExcludeLocations", [])),
@@ -127,6 +129,9 @@ def check(j, ctx, key=None):
         out.append("experience")
     if re.search(r"\b(senior|staff|principal|lead)\b", exp.get("level") or "", re.I):
         out.append("level")
+    pay, expect = jobinfo.salary_annual(j.get("salary") or ""), expected_pay(j, ctx)
+    if pay and expect and pay[1] < expect:
+        out.append("lowPay")
     if fc.get("skipClearance", True) and CLEARANCE.search(desc):
         out.append("clearance")
     if CBP.search(desc) or CBP.search(title):
@@ -148,7 +153,16 @@ def check(j, ctx, key=None):
         out.append("logged")
     if key and key in ctx["skippedKeys"]:
         out.append("skipped")
-    return out, {"checkLocation": check_location, "experience": exp}
+    return out, {"checkLocation": check_location, "experience": exp, "pay": pay, "expect": expect}
+
+
+def expected_pay(j, ctx):
+    """salaryExpectation for the job's area (the lowest one for multi-city posts), else its default; None = no
+    expectation set. Jobs without a listed salary never fail it."""
+    e = ctx.get("payExpect") or {}
+    by = e.get("byLocation") or {}
+    vals = [by[a] for a in areas(j, ctx) if by.get(a)]
+    return min(vals) if vals else e.get("default") or None
 
 
 def areas(j, ctx):
@@ -166,6 +180,8 @@ def reason(flag, j, ctx, extras):
         return f"requires {e.get('text') or str(e.get('years')) + '+ yrs'}"
     if flag == "level":
         return f"level {extras['experience'].get('level')}"
+    if flag == "lowPay":
+        return f"pay up to ${extras['pay'][1] / 1000:,.0f}K, below your ${extras['expect'] / 1000:,.0f}K expectation"
     if flag == "old":
         return f"older than {ctx['hours']:g}h"
     return LABELS[flag].lower() if flag not in ("cbp", "easyApply") else LABELS[flag]

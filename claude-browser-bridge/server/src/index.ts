@@ -424,6 +424,38 @@ server.tool(
   }
 );
 
+// Types a private value from <workspace>/private/.env (loaded into process.env by loadConfig) into a password field.
+// The value never goes back to Claude or into the call log: only the field ref and the key name do.
+const SECRET_NAMES = ["APPLICANT_PASSWORD"] as const;
+
+server.tool(
+  "type_secret",
+  "Type a private value from private/.env (e.g. APPLICANT_PASSWORD, the job-site account password) into a password " +
+    "field by ref. Only works on <input type=password> fields; the value is never returned or logged.",
+  { tabId, ref, name: z.enum(SECRET_NAMES).describe("Which .env value to type") },
+  async ({ tabId, ref, name }) => {
+    const started = Date.now();
+    const args = { tabId, ref, name };
+    const finish = (ok: boolean, msg: string): ToolResult => {
+      writeCallLog("type_secret", args, ok, Date.now() - started, msg);
+      return ok ? text(msg) : { content: [{ type: "text", text: msg }], isError: true };
+    };
+    const secret = process.env[name];
+    if (!secret) return finish(false, `${name} is empty in private/.env - use wait_for_password instead.`);
+    try {
+      // read_page lines look like "e5 | input:password | ...": refuse anything that is not a password input
+      const page = String(await sendCommand("read_page", { tabId }));
+      const line = page.split("\n").find((l) => l.startsWith(`${ref} |`));
+      if (!line) return finish(false, `No element ${ref} on the page - run read_page again.`);
+      if (!/\|\s*input:password\b/.test(line)) return finish(false, `${ref} is not a password field - not typed.`);
+      await sendCommand("type", { tabId, ref, text: secret, clear: true });
+      return finish(true, `Typed ${name} into ${ref} (value not shown).`);
+    } catch (err) {
+      return finish(false, `Error: ${(err as Error).message}`);
+    }
+  }
+);
+
 // ---------- start ----------
 const transport = new StdioServerTransport();
 await server.connect(transport);

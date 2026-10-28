@@ -29,7 +29,7 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line); }
-  .bar { max-width: 1280px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .bar { margin: 0 auto; padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   h1 { font-size: 18px; margin: 0; }
   .meta { color: var(--muted); font-size: 13px; }
   .spacer { flex: 1; }
@@ -42,7 +42,7 @@
   button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   input[type=search], select { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 10px; }
   input[type=search] { min-width: 0; flex: 1 1 220px; }
-  main { max-width: 1280px; margin: 0 auto; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+  main { margin: 0 auto; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
   @media (max-width: 900px) {
     main { grid-template-columns: minmax(0, 1fr); }
     aside { order: -1; position: static; }
@@ -60,8 +60,15 @@
   .error { background: var(--bad-soft); color: var(--bad); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; white-space: pre-wrap; font-size: 13px; }
   .bulk { display: none; align-items: center; gap: 8px; margin-bottom: 12px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--accent); border-radius: var(--radius); }
   .bulk.show { display: flex; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; margin-bottom: 10px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; }
+  #list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+  #list > .empty, #list > .hidden-note, #list > .pager { grid-column: 1 / -1; }
+  @media (max-width: 700px) { #list { grid-template-columns: minmax(0, 1fr); } }
+  .pager { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 4px; }
+  .pager .meta { min-width: 120px; text-align: center; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; }
   .card.selected { border-color: var(--accent); }
+  .card .body { display: flex; flex-direction: column; min-width: 0; }  /* cards in a row share a height; buttons sit on the bottom line */
+  .card .body > button.ghost { align-self: flex-start; }
   .card input[type=checkbox] { margin-top: 4px; width: 16px; height: 16px; }
   .title { font-weight: 600; font-size: 15px; color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
   .title:hover { text-decoration: underline; }
@@ -73,7 +80,12 @@
   .pill.done { background: var(--ok-soft); color: var(--ok); }
   .pill.wait { background: var(--warn-soft); color: var(--warn); }
   .pill.skip { background: var(--gray-soft); color: var(--muted); }
-  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 220px)); gap: 8px; margin: 8px 0 2px; }
+  .lvlbadge { font-size: 12px; font-weight: 700; letter-spacing: .02em; border-radius: 6px; padding: 2px 9px; white-space: nowrap; border: 1px solid currentColor; }
+  .lvlbadge.entry { background: var(--ok-soft); color: var(--ok); }
+  .lvlbadge.mid { background: var(--accent-soft); color: var(--accent); }
+  .lvlbadge.high { background: var(--bad-soft); color: var(--bad); }
+  .lvlbadge.other { background: var(--gray-soft); color: var(--muted); }
+  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0 2px; }
   .fact { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--gray-soft); min-width: 0; }
   .fact .k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .fact .v { display: block; font-size: 14px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
@@ -86,7 +98,7 @@
   .desc { color: var(--text); font-size: 13px; margin: 6px 0 2px; overflow-wrap: anywhere; }
   .desc.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .lognote { font-size: 12px; color: var(--muted); margin-top: 4px; }
-  .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .actions { display: flex; gap: 8px; margin-top: auto; padding-top: 8px; flex-wrap: wrap; }
   .actions a { color: var(--accent); font-size: 13px; align-self: center; }
   .actions a.btn-link { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 6px 12px; text-decoration: none; font-weight: 600; }
   aside { position: sticky; top: 76px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); }
@@ -131,6 +143,17 @@
   .ans-row.empty textarea { border-color: var(--warn); }
   @media (max-width: 640px) { .ans-row { grid-template-columns: minmax(0, 1fr); } }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  #ssDlg { width: min(640px, calc(100vw - 32px)); }
+  .ss-grid { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 10px 14px; align-items: start; font-size: 13px; }
+  .ss-grid > .k { color: var(--muted); padding-top: 6px; }
+  .ss-grid textarea, .ss-grid input[type=number] { width: 100%; font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  .ss-grid textarea { min-height: 60px; resize: vertical; }
+  .ss-grid input[type=number] { width: 90px; }
+  .ss-opts { display: flex; flex-wrap: wrap; gap: 4px 14px; padding-top: 5px; }
+  .ss-opts label { display: inline-flex; gap: 6px; align-items: center; }
+  .ss-opts label[hidden] { display: none; }
+  .ss-help { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  @media (max-width: 640px) { .ss-grid { grid-template-columns: minmax(0, 1fr); } .ss-grid > .k { padding-top: 0; } }
 </style>
 </head>
 <body>
@@ -143,6 +166,7 @@
     <button id="answersBtn" title="Upload your resume and review the answers Claude uses on application forms">Update my answers</button>
     <button class="primary" data-search="linkedin" title="Claude searches LinkedIn in a new Chrome tab and adds about 10 candidates here">Search LinkedIn</button>
     <button class="primary" data-search="simplify" title="Adds about 10 new-grad jobs from the SimplifyJobs GitHub list (github.com/SimplifyJobs/New-Grad-Positions) that pass your search filters">Search SimplifyJobs</button>
+    <button class="primary" data-search="simplifysite" title="Search the simplify.jobs website: choose location, salary, work mode etc. and paste the page's X-TYPESENSE-API-KEY header">Search Simplify website</button>
   </div>
   <div class="bar" style="padding-top:0">
     <label class="sr" for="q">Search</label>
@@ -173,7 +197,7 @@
   </div>
   <div class="bar filters-bar">
     <details class="filters" id="filtersBox">
-      <summary>Hide jobs that fail a filter <span class="meta" id="filtersOn"></span></summary>
+      <summary>Hide jobs that fail a filter (To review tab) <span class="meta" id="filtersOn"></span></summary>
       <div class="filter-grid" id="filters"></div>
       <div class="filter-actions">
         <button class="ghost" id="filtersAll">Check all</button>
@@ -205,6 +229,72 @@
   </aside>
 </main>
 
+<dialog id="ssDlg" aria-labelledby="ssTitle">
+  <form class="dlg" id="ssForm" method="dialog">
+    <div class="dlg-head">
+      <h2 id="ssTitle">Search Simplify website</h2>
+      <p>The job board searches simplify.jobs itself, newest first, about 250 jobs per click, and adds every one that matches these choices. Click again to get the next 250 - it goes on where the last click stopped.</p>
+    </div>
+    <div class="dlg-body ss-grid">
+      <label class="k" for="ssKey">Request header</label>
+      <div>
+        <textarea id="ssKey" spellcheck="false" autocomplete="off" placeholder="x-typesense-api-key: ..."></textarea>
+        <div class="ss-help" id="ssKeyHelp"></div>
+      </div>
+      <span class="k">Posted within</span>
+      <div class="ss-opts">
+        <select id="ssHours" aria-label="Posted within">
+          <option value="12">12 hours</option>
+          <option value="24">24 hours</option>
+          <option value="72">3 days</option>
+          <option value="168">1 week</option>
+        </select>
+      </div>
+      <span class="k">Locations</span>
+      <div class="ss-opts" id="ssAreas"></div>
+      <span class="k">Experience level</span>
+      <div>
+        <div class="ss-opts" id="ssLevels"></div>
+        <div class="ss-help">As tagged by Simplify (Simplify filters on these itself, newest jobs first).</div>
+      </div>
+      <span class="k">Work mode</span>
+      <div class="ss-opts" id="ssModes">
+        <label><input type="checkbox" value="Remote" checked> Remote</label>
+        <label><input type="checkbox" value="Hybrid" checked> Hybrid</label>
+        <label><input type="checkbox" value="On-site" checked> On-site</label>
+      </div>
+      <label class="k" for="ssPay">Salary</label>
+      <div class="ss-opts">
+        <select id="ssPay">
+          <option value="">Any salary</option>
+          <option value="listed">Salary listed</option>
+          <option value="50000">$50K+</option>
+          <option value="75000">$75K+</option>
+          <option value="100000">$100K+</option>
+          <option value="125000">$125K+</option>
+          <option value="150000">$150K+</option>
+          <option value="200000">$200K+</option>
+        </select>
+        <label id="ssNoPayWrap" hidden><input type="checkbox" id="ssNoPay" checked> include not listed</label>
+      </div>
+      <label class="k" for="ssQueries">Role searches</label>
+      <div>
+        <textarea id="ssQueries" spellcheck="false"></textarea>
+        <div class="ss-help">One search per line.</div>
+      </div>
+      <span class="k">Search filters</span>
+      <div class="ss-opts">
+        <label><input type="checkbox" id="ssFilters" checked> Only jobs that pass my search filters (title, years, clearance, staffing agencies, skip list…)</label>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <span class="meta" id="ssStatus" role="status"></span>
+      <button type="button" id="ssClose">Cancel</button>
+      <button type="submit" class="primary" id="ssGo">Search</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="ansDlg" aria-labelledby="ansTitle">
   <div class="dlg">
     <div class="dlg-head">
@@ -233,7 +323,8 @@ const GROUPS = [
   { id: "all", label: "All", match: () => true },
 ];
 const state = { jobs: [], tab: "review", checked: new Set(), expanded: new Set(), expLimits: { max: 2, stretchAt: 3 },
-                filters: [], areas: [], hide: new Set() };
+                filters: [], areas: [], hide: new Set(), page: 0 };
+const PAGE_SIZE = 8;  // job cards per page, two per row
 const $ = id => document.getElementById(id);
 const PREFS = "jobboard.filters";  // this browser only: hidden filters, location, salary
 function loadPrefs() {
@@ -275,7 +366,10 @@ function pillText(s) {
 async function api(path, body) {
   const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
   const r = await fetch(path, opt);
-  if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+  if (!r.ok) {
+    const why = await r.json().then(d => d.error, () => "");
+    throw new Error(why || `${path}: HTTP ${r.status}`);
+  }
   return r.json();
 }
 function showError(msg) { const e = $("error"); e.textContent = msg; e.hidden = !msg; }
@@ -303,6 +397,7 @@ function apply(data) {
   sel.value = sources.includes(cur) ? cur : "";
   state.filters = data.filters || [];
   state.areas = data.areas || [];
+  state.simplify = data.simplifySite || state.simplify;
   const ar = $("area"), curArea = ar.value || state.area || "";
   ar.innerHTML = '<option value="">Any location</option>' + state.areas.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join("") +
     '<option value="~other">Other locations</option>';
@@ -311,8 +406,8 @@ function apply(data) {
 }
 
 // Search buttons: the request goes to Claude's session (queue watcher); Claude searches in Chrome and adds candidates here.
-const SOURCES = { google: "Google Jobs", linkedin: "LinkedIn", simplify: "SimplifyJobs" };
-const SELF_SEARCH = ["simplify"];  // fetched by the job board itself, not by Claude in Chrome
+const SOURCES = { google: "Google Jobs", linkedin: "LinkedIn", simplify: "SimplifyJobs", simplifysite: "Simplify website" };
+const SELF_SEARCH = ["simplify", "simplifysite"];  // fetched by the job board itself, not by Claude in Chrome
 function showSearches(reqs) {
   const open = reqs.filter(r => r.status === "requested" || r.status === "running");
   document.querySelectorAll("[data-search]").forEach(b => {
@@ -323,7 +418,8 @@ function showSearches(reqs) {
   let msg = "";
   if (open.length) {
     msg = open.map(r => r.status === "running"
-      ? (SELF_SEARCH.includes(r.source) ? `Fetching the ${SOURCES[r.source]} new-grad list…`
+      ? (SELF_SEARCH.includes(r.source)
+           ? (r.source === "simplifysite" ? `Searching the simplify.jobs website${r.note ? " - " + r.note : ""}…` : `Fetching the ${SOURCES[r.source]} new-grad list…`)
          : `Claude is searching ${SOURCES[r.source]} in Chrome${r.note ? " - " + r.note : ""}…`)
       : `Waiting for Claude to start the ${SOURCES[r.source]} search (requested ${ago(r.requestedAt)})` +
         (Date.now() - new Date(r.requestedAt).getTime() > 3 * 60000 ? " - is Claude's job-search session running?" : "") + "…").join(" ");
@@ -336,9 +432,69 @@ function showSearches(reqs) {
   el.hidden = !msg;
 }
 async function requestSearch(source) {
+  if (source === "simplifysite") return openSimplify();
   try { apply(await api("/api/search", { source })); showError(""); }
   catch (e) { showError("Could not send the search request: " + e.message); }
 }
+
+// ---- Search Simplify website: header (X-TYPESENSE-API-KEY) + search options, then the board server searches ----
+const SS_PREFS = "jobboard.simplifySite";  // this browser only: the last options (never the key)
+function openSimplify() {
+  const d = state.simplify || { keySaved: false, hours: 24, limit: 10, queries: [] };
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem(SS_PREFS) || "{}"); } catch (e) { /* storage blocked: defaults */ }
+  $("ssKey").value = "";
+  $("ssKey").required = !d.keySaved;
+  $("ssKeyHelp").textContent = (d.keySaved ? "A key is saved - leave this blank to reuse it, or paste a new one if the search fails. " : "") +
+    "On simplify.jobs press F12 > Network > Fetch/XHR, search for a job, click the multi_search request and copy " +
+    "its Request Headers (the whole block or just the x-typesense-api-key line).";
+  const hours = String(p.hours || d.hours);
+  $("ssHours").value = [...$("ssHours").options].some(o => o.value === hours) ? hours : "24";
+  const areas = p.areas && p.areas.length ? p.areas : state.areas;
+  $("ssAreas").innerHTML = state.areas.map(a =>
+    `<label><input type="checkbox" value="${esc(a)}" ${areas.includes(a) ? "checked" : ""}> ${esc(a)}</label>`).join("");
+  const levels = p.levels && p.levels.length ? p.levels : (d.defaultLevels || []);
+  $("ssLevels").innerHTML = (d.levels || []).map(l =>
+    `<label><input type="checkbox" value="${esc(l)}" ${levels.includes(l) ? "checked" : ""}> ${esc(l)}</label>`).join("");
+  const modes = p.workModes && p.workModes.length ? p.workModes : ["Remote", "Hybrid", "On-site"];
+  $("ssModes").querySelectorAll("input").forEach(c => { c.checked = modes.includes(c.value); });
+  $("ssPay").value = p.pay || "";
+  $("ssNoPay").checked = p.includeNoPay !== false;
+  $("ssNoPayWrap").hidden = !Number($("ssPay").value);
+  $("ssQueries").value = (p.queries && p.queries.length ? p.queries : d.queries).join("\n");
+  $("ssFilters").checked = p.searchFilters !== false;
+  $("ssStatus").textContent = "";
+  $("ssGo").disabled = false;
+  $("ssDlg").showModal();
+}
+const checkedIn = id => [...$(id).querySelectorAll("input:checked")].map(c => c.value);
+$("ssPay").addEventListener("input", () => { $("ssNoPayWrap").hidden = !Number($("ssPay").value); });
+$("ssClose").onclick = () => $("ssDlg").close();
+$("ssForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const pay = $("ssPay").value;
+  const options = {
+    hours: Number($("ssHours").value), areas: checkedIn("ssAreas"), levels: checkedIn("ssLevels"), workModes: checkedIn("ssModes"),
+    minPay: Number(pay) || 0, payListed: pay === "listed", includeNoPay: $("ssNoPay").checked,
+    queries: $("ssQueries").value.split("\n").map(s => s.trim()).filter(Boolean),
+    searchFilters: $("ssFilters").checked,
+  };
+  if (!options.areas.length) { $("ssStatus").textContent = "Pick at least one location."; return; }
+  if (!options.levels.length) { $("ssStatus").textContent = "Pick at least one experience level."; return; }
+  if (!options.workModes.length) { $("ssStatus").textContent = "Pick at least one work mode."; return; }
+  if (!options.queries.length) { $("ssStatus").textContent = "Add at least one role search."; return; }
+  try { localStorage.setItem(SS_PREFS, JSON.stringify({ ...options, pay })); } catch (e) { /* storage blocked */ }
+  $("ssGo").disabled = true;
+  $("ssStatus").textContent = "Starting the search…";
+  try {
+    apply(await api("/api/search", { source: "simplifysite", key: $("ssKey").value.trim(), options }));
+    showError("");
+    $("ssDlg").close();
+  } catch (e) {
+    $("ssGo").disabled = false;
+    $("ssStatus").textContent = e.message;
+  }
+});
 
 function filtered() {
   const g = GROUPS.find(x => x.id === state.tab);
@@ -359,8 +515,10 @@ function filtered() {
   return list.sort(cmp);
 }
 
-// location / salary dropdowns and the "hide jobs that fail a filter" checkboxes
+// location / salary dropdowns and the "hide jobs that fail a filter" checkboxes - only for jobs still to review
+// (queued, waiting and finished jobs are always shown)
 function passes(j) {
+  if (j.status !== "new") return true;
   const area = $("area").value, pay = $("pay").value;
   if (area === "~other" ? (j.areas || []).length : area && !(j.areas || []).includes(area)) return false;
   if (pay === "listed" && j.payMax == null) return false;
@@ -370,7 +528,7 @@ function passes(j) {
 
 function renderFilters() {
   const counts = {};
-  state.jobs.forEach(j => (j.flags || []).forEach(f => { counts[f] = (counts[f] || 0) + 1; }));
+  state.jobs.filter(j => j.status === "new").forEach(j => (j.flags || []).forEach(f => { counts[f] = (counts[f] || 0) + 1; }));
   $("filters").innerHTML = state.filters.map(f => `
     <label title="From ${esc(f.rule)}"><input type="checkbox" data-filter="${esc(f.id)}" ${state.hide.has(f.id) ? "checked" : ""}>
       <span>${esc(f.label)}</span><span class="n">${counts[f.id] || 0}</span></label>`).join("");
@@ -393,8 +551,15 @@ function render() {
       : state.tab === "review" ? "Nothing new to review. Click a search button for new candidates." : "No jobs in this view.";
     $("list").innerHTML = `<div class="empty">${msg}</div>`;
   } else {
+    const pages = Math.ceil(list.length / PAGE_SIZE);
+    state.page = Math.min(state.page, pages - 1);
+    const from = state.page * PAGE_SIZE;
+    const pager = pages > 1 ? `<div class="pager">
+        <button data-page="${state.page - 1}" ${state.page === 0 ? "disabled" : ""}>← Previous</button>
+        <span class="meta">Page ${state.page + 1} of ${pages} · ${from + 1}-${Math.min(from + PAGE_SIZE, list.length)} of ${list.length}</span>
+        <button data-page="${state.page + 1}" ${state.page === pages - 1 ? "disabled" : ""}>Next →</button></div>` : "";
     $("list").innerHTML = (state.hiddenCount ? `<div class="hidden-note">${state.hiddenCount} hidden by your location / salary / filter choices</div>` : "")
-      + list.map(card).join("");
+      + list.slice(from, from + PAGE_SIZE).map(card).join("") + pager;
   }
 
   const q = state.jobs.filter(j => j.status === "selected" || j.status === "applying")
@@ -420,7 +585,7 @@ function facts(j) {
   const e = j.experience || {}, lim = state.expLimits;
   const fit = e.years == null ? "" : e.years <= lim.max ? "fit" : e.years <= lim.stretchAt ? "stretch" : "senior";
   const fitText = { fit: "fits your range", stretch: "stretch", senior: "too senior" }[fit] || "";
-  const level = [e.level, fitText].filter(Boolean).join(" · ");
+  const level = fitText;
   return `<div class="facts">
       <div class="fact"><span class="k">Salary</span>
         <span class="v ${j.salary ? "" : "none"}">${esc(j.salary || "Not listed")}</span></div>
@@ -431,6 +596,17 @@ function facts(j) {
       <div class="fact"><span class="k">Work mode</span>
         <span class="v ${j.workMode ? "" : "none"}">${esc(j.workMode || "Not stated")}</span></div>
     </div>`;
+}
+
+function levelBadges(j) {  // New Grad / Junior / Mid Level ... next to the title: simplify.jobs tags, else the level read from the posting
+  const e = j.experience || {};
+  const labels = (e.tag ? e.tag.split(" / ") : [e.level]).filter(Boolean);
+  return labels.map(l => {
+    const c = /new grad|entry|early career|junior|associate|intern|level i$/i.test(l) ? "entry"
+      : /mid|level ii$/i.test(l) ? "mid"
+      : /senior|staff|lead|expert|principal|level iii/i.test(l) ? "high" : "other";
+    return `<span class="lvlbadge ${c}" title="Experience level">${esc(l)}</span>`;
+  }).join("");
 }
 
 function card(j) {
@@ -459,9 +635,10 @@ function card(j) {
   return `
     <article class="card ${s === "selected" || s === "applying" ? "selected" : ""}">
       <input type="checkbox" data-check="${k}" aria-label="Check ${esc(j.title)}" ${state.checked.has(j.key) ? "checked" : ""} ${canChoose ? "" : "disabled"}>
-      <div>
+      <div class="body">
         <div class="row">
           ${posting ? `<a class="title" href="${esc(posting)}" target="_blank" rel="noopener noreferrer">${esc(j.title)}</a>` : `<span class="title">${esc(j.title)}</span>`}
+          ${levelBadges(j)}
           <span class="pill ${pillClass(s)}">${esc(pillText(s))}</span>
         </div>
         <div class="sub">
@@ -500,7 +677,8 @@ async function move(key, dir) {
 document.addEventListener("click", e => {
   const t = e.target.closest("button");
   if (!t) return;
-  if (t.dataset.tab) { state.tab = t.dataset.tab; render(); return; }
+  if (t.dataset.tab) { state.tab = t.dataset.tab; state.page = 0; render(); return; }
+  if (t.dataset.page) { state.page = Number(t.dataset.page); render(); $("list").scrollIntoView({ block: "start" }); return; }
   const act = t.dataset.act, key = t.dataset.key;
   if (act === "more") { state.expanded.has(key) ? state.expanded.delete(key) : state.expanded.add(key); render(); }
   else if (act === "up") move(key, -1);
@@ -513,7 +691,7 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("change", e => {
   const f = e.target.dataset && e.target.dataset.filter;
-  if (f !== undefined) { e.target.checked ? state.hide.add(f) : state.hide.delete(f); savePrefs(); render(); return; }
+  if (f !== undefined) { e.target.checked ? state.hide.add(f) : state.hide.delete(f); state.page = 0; savePrefs(); render(); return; }
   const k = e.target.dataset && e.target.dataset.check;
   if (k === undefined) return;
   e.target.checked ? state.checked.add(k) : state.checked.delete(k);
@@ -522,10 +700,10 @@ document.addEventListener("change", e => {
 $("bulkSelect").onclick = () => { const k = [...state.checked]; state.checked.clear(); choose(k, "selected"); };
 $("bulkSkip").onclick = () => { const k = [...state.checked]; state.checked.clear(); choose(k, "skipped"); };
 $("bulkClear").onclick = () => { state.checked.clear(); render(); };
-["q", "sort", "source"].forEach(id => $(id).addEventListener("input", render));
-["area", "pay", "payNone"].forEach(id => $(id).addEventListener("input", () => { savePrefs(); render(); }));
-$("filtersAll").onclick = () => { state.filters.forEach(f => state.hide.add(f.id)); savePrefs(); render(); };
-$("filtersNone").onclick = () => { state.hide.clear(); savePrefs(); render(); };
+["q", "sort", "source"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; render(); }));
+["area", "pay", "payNone"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; savePrefs(); render(); }));
+$("filtersAll").onclick = () => { state.filters.forEach(f => state.hide.add(f.id)); state.page = 0; savePrefs(); render(); };
+$("filtersNone").onclick = () => { state.hide.clear(); state.page = 0; savePrefs(); render(); };
 loadPrefs();
 
 document.querySelectorAll("[data-search]").forEach(b => { b.onclick = () => requestSearch(b.dataset.search); });
