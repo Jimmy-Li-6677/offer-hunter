@@ -142,6 +142,8 @@ def card_facts(j):
     desc = j.get("description") or ""
     salary = jobinfo.salary_from(j.get("salary") or "") or j.get("salary") or jobinfo.salary_from(desc)
     exp = j.get("experience") or jobinfo.experience_from(desc, j.get("title", ""))
+    if j.get("levels"):  # simplify.jobs tags (Junior / Mid Level): shown on the card only, not used by the filters
+        exp = {**exp, "tag": " / ".join(j["levels"])}
     return {"salary": salary, "experience": exp, "workMode": j.get("workMode") or jobinfo.work_mode(j)}
 
 
@@ -172,7 +174,16 @@ def view(board):
                     "flags": flags, "areas": jobfilters.areas(j, ctx) if ctx else [],
                     "payMin": pay[0] if pay else None, "payMax": pay[1] if pay else None})
     cfg = config()
-    meta = {"searchRequests": board.get("searches", [])[-5:],
+    import simplifysite  # same folder
+    try:
+        full = json.loads(CONFIG.read_text(encoding="utf-8"))
+        so = simplifysite.options({}, full)
+        simplify = {"keySaved": bool(simplifysite.saved_key()), "hours": so["hours"], "limit": so["limit"],
+                    "queries": simplifysite.settings(full)["queries"], "levels": simplifysite.LEVELS,
+                    "defaultLevels": simplifysite.DEFAULT_LEVELS}
+    except (OSError, ValueError):
+        simplify = {"keySaved": False, "hours": 24, "limit": 10, "queries": [], "levels": [], "defaultLevels": []}
+    meta = {"searchRequests": board.get("searches", [])[-5:], "simplifySite": simplify,
             "profileRequest": (board.get("profileRequests") or [None])[-1]}
     filters = [{"id": f, "label": label, "rule": rule} for f, label, rule in jobfilters.FILTERS
                if f not in jobfilters.STATUS_FILTERS]
@@ -211,8 +222,8 @@ def reorder(board, keys):
 
 
 # ---------- search requests (the page's search buttons; Claude does the search in Chrome) ----------
-SEARCH_SOURCES = {"google": "Google Jobs", "linkedin": "LinkedIn", "simplify": "SimplifyJobs"}
-SELF_SEARCH = {"simplify"}  # searched by this server itself (simplifyjobs.py), not by Claude in Chrome
+SEARCH_SOURCES = {"google": "Google Jobs", "linkedin": "LinkedIn", "simplify": "SimplifyJobs", "simplifysite": "Simplify website"}
+SELF_SEARCH = {"simplify", "simplifysite"}  # searched by this server itself (simplifyjobs.py / simplifysite.py), not by Claude in Chrome
 OPEN_SEARCH = ("requested", "running")
 
 
@@ -245,6 +256,27 @@ def run_simplify(sid):
             set_search(board, sid, "done", note=f"SimplifyJobs new-grad list, last {hours:g}h (widen step {step})", found=n)
             save_board(board)
     except Exception as e:  # network / format errors: show them on the page
+        with LOCK:
+            board = load_board()
+            set_search(board, sid, "failed", note=f"{type(e).__name__}: {e}")
+            save_board(board)
+
+
+def run_simplify_site(sid, opts):
+    """Background thread for the "Search Simplify website" button: fetch the next batch from the simplify.jobs search
+    API with the dialog's options (continuing where the last click stopped) and add every candidate."""
+    import simplifysite  # same folder
+    try:
+        with LOCK:
+            board = load_board()
+        jobs, note, cursor = simplifysite.run(board["jobs"], opts=opts, cursor=board.get(simplifysite.CURSOR))
+        with LOCK:
+            board = load_board()
+            n = merge(board, jobs)
+            board[simplifysite.CURSOR] = cursor
+            set_search(board, sid, "done", note=f"simplify.jobs: {note} ({simplifysite.summary(opts)})", found=n)
+            save_board(board)
+    except Exception as e:  # key rejected / network / format errors: show them on the page
         with LOCK:
             board = load_board()
             set_search(board, sid, "failed", note=f"{type(e).__name__}: {e}")
@@ -434,12 +466,27 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/search":
             if body.get("source") not in SEARCH_SOURCES:
                 return self.send(400, {"error": "source must be " + " or ".join(SEARCH_SOURCES)})
+            opts = None
+            if body["source"] == "simplifysite":
+                import simplifysite  # same folder
+                try:
+                    if (body.get("key") or "").strip():
+                        simplifysite.save_key(body["key"])
+                    elif not simplifysite.saved_key():
+                        raise ValueError("paste the X-TYPESENSE-API-KEY header from the simplify.jobs page")
+                    opts = simplifysite.options(body.get("options"), json.loads(CONFIG.read_text(encoding="utf-8")))
+                except (ValueError, TypeError) as e:
+                    return self.send(400, {"error": str(e)})
             with LOCK:
                 board = load_board()
                 r = request_search(board, body["source"])
+                if r and opts:
+                    r["note"] = simplifysite.summary(opts)
                 save_board(board)
             if r and r["source"] in SELF_SEARCH:
-                threading.Thread(target=run_simplify, args=(r["id"],), daemon=True).start()
+                args = (r["id"], opts) if r["source"] == "simplifysite" else (r["id"],)
+                target = run_simplify_site if r["source"] == "simplifysite" else run_simplify
+                threading.Thread(target=target, args=args, daemon=True).start()
             return self.send(200, view(board))
         self.send(404, {"error": "not found"})
 

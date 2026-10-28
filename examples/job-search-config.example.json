@@ -44,6 +44,13 @@
     }
   ],
   "minSalary": "at or above the local median for the role",
+  "salaryExpectation": {
+    "default": 0,
+    "byLocation": {
+      "<location name>": 0
+    },
+    "_note": "Yearly base pay you expect, per location (names = the locations entries; default = any other area). Search filter 'Pay below your salary expectation' (jobfilters.py): a job fails it when the TOP of its listed pay range is below the expectation for its area (lowest one for multi-city posts); jobs with no salary listed never fail it. The job board can hide them, Simplify searches drop them when search filters are on, and Claude's browser searches (autoApplyLoop 2g) leave them out. Set a value to 0 / remove it to turn the check off there."
+  },
   "skip": {
     "companies": [
       "${SKIP_COMPANIES}"
@@ -67,7 +74,11 @@
   },
   "browserSearch": {
     "candidatesPerSearch": 10,
-    "_about": "Search Google Jobs / Search LinkedIn buttons on the job board: Claude searches in a new Chrome tab and adds up to candidatesPerSearch jobs that pass the search requirements to the board for approval (autoApplyLoop step 2g). Uses no SerpApi searches. Each search covers every entry in locations (all areas + Remote US).",
+    "postedWithinHours": 24,
+    "_postedWithinHoursNote": "Search Google Jobs / Search LinkedIn: only jobs posted in the last 24 hours, newest first (LinkedIn f_TPR=r86400 + sortBy=DD; Google Jobs 'Date posted: Past 24 hours' / 'Yesterday'). One pass over every location; add whatever passes the search requirements - candidatesPerSearch is a MAXIMUM, not a target.",
+    "widenToFill": false,
+    "_widenToFillNote": "false = never widen the time window, roles or sources just to reach candidatesPerSearch; if the last 24 hours give fewer jobs, add those and stop. browserSearch.widen is then not used for Google/LinkedIn searches.",
+    "_about": "Search Google Jobs / Search LinkedIn buttons on the job board: Claude searches in a new Chrome tab for jobs posted in the last browserSearch.postedWithinHours (24) hours and adds up to candidatesPerSearch (a cap, not a target) that pass the search requirements to the board for approval (autoApplyLoop step 2g). Uses no SerpApi searches. Each search covers every entry in locations (all areas + Remote US).",
     "widen": [
       "1. Strict: the chosen role x area, posted in the last postedWithinHours (12) hours - searches run about twice a day (LinkedIn f_TPR=r43200 + sortBy=DD; Google Jobs 'Yesterday' then keep only cards 'X hours ago' <= 12; career sites sorted newest).",
       "2. Last 24 hours (Google Jobs 'Yesterday'; LinkedIn f_TPR=r86400).",
@@ -78,7 +89,7 @@
       "7. Direct career sites: sources.careerSites and big employers' own boards (Greenhouse / Lever / Ashby APIs, company career search sorted newest, entry-level filter), last week.",
       "8. Stretch: jobs asking for experienceYears.stretchAt years (one step over the max), or unlisted pay - added with 'STRETCH:' at the start of description so the user decides."
     ],
-    "_widenNote": "Never widened (hard rules): active clearance, CBP, staffing agencies, skip companies, grad-year eligibility, Amazon SDE, already logged, Easy Apply without a company posting, non-US / outside locations, senior / staff / lead titles, internships.",
+    "_widenNote": "widen is only used when widenToFill is true. Never widened (hard rules): active clearance, CBP, staffing agencies, skip companies, grad-year eligibility, Amazon SDE, already logged, Easy Apply without a company posting, non-US / outside locations, senior / staff / lead titles, internships.",
     "locationActivity": [
       {
         "location": "<area from locations>",
@@ -88,13 +99,70 @@
         "note": ""
       }
     ],
-    "_locationActivityNote": "Per-location activity, busiest first: searches start with the first entry; Claude updates the counts after every search (autoApplyLoop 2g (1b))."
+    "_locationActivityNote": "Per-location activity, busiest first: searches start with the first entry; Claude updates the counts after every search (autoApplyLoop 2g (1b)).",
+    "simplifySite": {
+      "_about": "Search Simplify website button (JobSearch/simplifysite.py): the simplify.jobs search API (Typesense multi_search, collection 'jobs'); key = SIMPLIFY_TYPESENSE_KEY in private/.env, asked for on each click (blank = reuse). Undocumented API - if a search fails with a field error, run `python simplifysite.py --raw` and fix queryBy / filterBy here.",
+      "collection": "jobs",
+      "queries": [
+        "software engineer",
+        "software developer",
+        "full stack engineer",
+        "backend engineer",
+        "frontend engineer",
+        "data engineer",
+        "QA engineer",
+        "devops engineer",
+        "machine learning engineer"
+      ],
+      "queryBy": "title",
+      "filterBy": "",
+      "perPage": 250,
+      "batchSize": 250,
+      "sortBy": "start_date:desc",
+      "postedField": "start_date",
+      "levelField": "experience_level",
+      "countryField": "physical_countries",
+      "functionsField": "functions",
+      "functions": [
+        "Software Engineering",
+        "Backend Engineering",
+        "Full-Stack Engineering",
+        "Frontend Engineering",
+        "Mobile Engineering",
+        "Systems Software Engineering",
+        "AI Application Engineering",
+        "AI & Machine Learning",
+        "Machine Learning Engineering",
+        "Computer Vision",
+        "Data Engineering",
+        "QA & Testing",
+        "Manual & Functional QA",
+        "Test Automation Engineering",
+        "DevOps & Infrastructure",
+        "DevOps Engineering",
+        "Platform Engineering",
+        "Site Reliability Engineering",
+        "Cloud Engineering"
+      ],
+      "_functionsNote": "Search Simplify website keeps only jobs Simplify tags with one of these job categories (its 'functions' field, filtered on the search server) - drops field service, facilities, hardware, civil etc. jobs whose title says Engineer. Empty list = no category filter.",
+      "postedWithinHours": 168,
+      "_postedWithinHoursNote": "Default 'Posted within' for the Search Simplify website button (its dialog can change it). Each click fetches batchSize (250) different jobs, newest first, continuing older than the last click; when the window is used up the next clicks go on with older posts up to maxAgeDays old, then start again from the newest.",
+      "maxAgeDays": 30
+    }
   },
   "jobFeed": {
     "_about": "Job API used by JobSearch/jobfeed.py (SerpApi Google Jobs). Regex lists are case-insensitive. LinkedIn search by Claude (autoApplyLoop 2b) is an optional extra source.",
     "postedWithinHours": 24,
     "_postedWithinHoursNote": "Google Jobs shows 'posted X hours/days ago'; jobs older than this are dropped. Already-logged and skipped jobs are filtered out, so re-seeing a job costs nothing.",
-    "staffingAgencies": ["SynergisticIT", "Revature", "Smoothstack", "Actalent", "TEKsystems", "Insight Global", "Robert Half"],
+    "staffingAgencies": [
+      "SynergisticIT",
+      "Revature",
+      "Smoothstack",
+      "Actalent",
+      "TEKsystems",
+      "Insight Global",
+      "Robert Half"
+    ],
     "_staffingAgenciesNote": "Companies treated as staffing agencies (skip rule: staffing-agency reposts) - the job board's Staffing agency filter. Whole-word, case-insensitive.",
     "keepAll": true,
     "_keepAllNote": "true = every job Google returns goes on the job board; jobs a filter below would drop show that reason (Feed filter: ...) on their card. false = only jobs that pass every filter.",
@@ -109,7 +177,8 @@
       "\\b(senior|sr\\.?|staff|principal|lead|manager|director|head of|vp|vice president|architect|distinguished|fellow)\\b",
       "\\b(intern|internship|co-?op|apprentice)\\b",
       "\\b(III|IV)\\b",
-      "\\b(mechanical|electrical|civil|hardware|manufacturing|chemical|structural|RF|analog|process|facilities|sales|field|solutions|customer|support|recruit\\w*|technician|battery|propulsion|avionics)\\b"
+      "\\b(mechanical|electrical|civil|hardware|manufacturing|chemical|structural|RF|analog|process|facilities|sales|field|solutions|customer|support|recruit\\w*|technician|battery|propulsion|avionics)\\b",
+      "^(?!.*\\b(software|developer|programmer|SDET|SWE|data|devops|cloud|full[- ]?stack|front[- ]?end|back[- ]?end|web|AI|ML|machine learning)\\b).*\\b(supervisor|stationary|substation|mining|thermal|contamination|mechatronics?|MMIC|ASICs?|SoC|silicon|physical design|design verification|design release|renewable|dynamic environments|plant|maintenance|HVAC|building|construction|project engineer|biomedical|clinical|manufacturing|test and evaluation|mission engineer)\\b"
     ],
     "locationInclude": [
       "\\b(<City>|<ST>|<State name>)\\b"
@@ -146,7 +215,8 @@
       "hl": "en",
       "_budgetNote": "Requests are paced: each day may use (monthlyRequestBudget - used at the start of the day) / days left in the month; at most maxRequestsPerRound per run. Free plan = check your SerpApi dashboard for the monthly searches."
     },
-    "_keepUndatedNote": "true = jobs with no posted date are kept (not dropped for the missing date)."
+    "_keepUndatedNote": "true = jobs with no posted date are kept (not dropped for the missing date).",
+    "_titleExcludeNote": "Last entry = non-software engineering titles (field service, facilities, civil, hardware / chip design...); it only applies when the title has no software word (software, developer, data, devops, cloud, AI/ML...)."
   },
   "jobBoard": {
     "_about": "Local job board page (JobSearch/jobboard.py): the user clicks Search Google Jobs / Search LinkedIn (Claude searches in Chrome and adds candidates, autoApplyLoop step 2g), then approves the jobs to apply to (apply queue, in order) or skips them. Data: private/job-board.json.",
@@ -204,7 +274,7 @@
       "1b. KEEP THE JOB LINK: every job logged in applications.json must have its link - always pass --url to python applog.py add: the company's own posting / application page for Submitted jobs, otherwise the LinkedIn post (https://www.linkedin.com/jobs/view/<id>/). applog.py refuses a Submitted entry without --url; python applog.py list --no-link shows entries still missing a link.",
       "2. JOB SOURCES: candidates come from searches Claude runs in Chrome when the user clicks a search button on the job board (step 2g) - Google Jobs or LinkedIn, no SerpApi searches used. jobfeed.py (SerpApi Google Jobs, jobFeed section) is a manual tool only: run it only when the user asks; its jobs go on the board the same way.",
       "2s. THE USER APPROVES THE JOBS: the job board page (http://127.0.0.1:<jobBoard.port>, opened by StartJobSearch.exe or `python jobboard.py`) lists the candidates; the user approves a job by putting it in the apply queue (in order) or skips it. Claude applies ONLY to queued jobs, with a QUEUE RUN (step 2q), started by the watcher (python jobboard.py watch, within seconds of an Add to apply queue click) or right away when the user says \"apply my selected jobs\". Never apply to, or log, jobs the user has not queued or has skipped.",
-      "2g. BROWSER SEARCH: the job board's \"Search Google Jobs\" / \"Search LinkedIn\" buttons save a search request; the watcher prints \"search request <id>: google|linkedin\". Then: (1) EVERY SEARCH COVERS ALL PREFERRED LOCATIONS: run the query once per entry in locations (each area, plus Remote US with the Remote filter) - never just one area. Pick the role searched least recently (`python jobboard.py searches --all` shows earlier requests and their notes) and run `python jobboard.py search <id> running --note \"<query> in all locations\"`. (1b) BUSIEST LOCATIONS FIRST: search the locations in the order of browserSearch.locationActivity (most entry-level openings first), and after the search update each location's counts there (date, entry-level results seen, candidates added) and re-sort so the busiest location is first. (2) Open a NEW Chrome tab (open_tab). Google Jobs: https://www.google.com/search?q=<query>+jobs+<area>&udm=8 (Google's Jobs tab), once per area, then the \"Date posted\" filter per browserSearch.widen (Yesterday first). LinkedIn: the step 2b search URL sorted newest (sortBy=DD, f_TPR=r43200 = last 12 h per postedWithinHours, f_E=2,3, geoId / linkedinKeyword, f_WT=2 for Remote US), one results page, pace per loop.linkedinSearchDelayMinutes, stop on HTTP 429. (3) Read the results and open each promising post; keep up to browserSearch.candidatesPerSearch candidates that pass: title fits roles / seniority, experienceYears, skip.rules (active clearance, CBP, staffing agencies incl. jobFeed.staffingAgencies, LinkedIn Easy Apply only when the company's own posting cannot be found - look for it first per step 2c, skip companies, 2027-grad-only, Amazon SDE) and `python applog.py check` (already logged -> drop). WIDEN WHEN THERE ARE TOO FEW (browserSearch.widen): start at widen step 1 and move to the next step only while fewer than browserSearch.candidatesPerSearch candidates pass; stop as soon as there are enough. Put the step used at the start of each candidate's description (e.g. \"[widen 3: related role] ...\") and in the search note (\"... widened to step N\"). If the ladder runs out, add what was found and say so - never pad with jobs that fail a hard rule. NO POST DATE: a posting that shows no posted date is NOT dropped for that - keep it as a candidate (and apply to it once queued) as long as it passes every other rule; note 'post date not given' in its description. For each, find the company's own posting / apply page (\"Apply on company site\", career site, ATS) as applyUrl. (4) Write them to a JSON file in the session scratchpad: [{source: \"google\"|\"linkedin\", id: <LinkedIn job id or a short unique id>, company, title, location, workMode: \"Remote\"|\"Hybrid\"|\"On-site\", salary (as posted, e.g. \"$90,000 - $120,000\" or \"$40 - $55 /hr\"), posted (ISO date-time), url (the post), applyUrl, description (key requirements, years, tech)}] and run `python jobboard.py add <file> --search <id>` (marks the request done). Do NOT log them in applications.json - the user approves them on the board. (5) Close the search tab and list the candidates in chat: company, title, location, work mode, pay, years required, link - the user approves with Add to apply queue on the board, which starts a queue run (step 2q). (6) Blocked (CAPTCHA, sign-in, 429, no results): `python jobboard.py search <id> failed --note \"<reason>\"` and tell the user.",
+      "2g. BROWSER SEARCH: the job board's \"Search Google Jobs\" / \"Search LinkedIn\" buttons save a search request; the watcher prints \"search request <id>: google|linkedin\". Then: (1) EVERY SEARCH COVERS ALL PREFERRED LOCATIONS: run the query once per entry in locations (each area, plus Remote US with the Remote filter) - never just one area. Pick the role searched least recently (`python jobboard.py searches --all` shows earlier requests and their notes) and run `python jobboard.py search <id> running --note \"<query> in all locations\"`. (1b) BUSIEST LOCATIONS FIRST: search the locations in the order of browserSearch.locationActivity (most entry-level openings first), and after the search update each location's counts there (date, entry-level results seen, candidates added) and re-sort so the busiest location is first. (2) Open a NEW Chrome tab (open_tab). Google Jobs: https://www.google.com/search?q=<query>+jobs+<area>&udm=8 (Google's Jobs tab), once per area, then the \"Date posted\" filter set to the last 24 hours (Past 24 hours / Yesterday). LinkedIn: the step 2b search URL sorted newest (sortBy=DD, f_TPR=r86400 = last 24 h per browserSearch.postedWithinHours, f_E=2,3, geoId / linkedinKeyword, f_WT=2 for Remote US), one results page, pace per loop.linkedinSearchDelayMinutes, stop on HTTP 429. (3) Read the results and open each promising post; keep up to browserSearch.candidatesPerSearch candidates that pass: title fits roles / seniority, experienceYears, skip.rules (active clearance, CBP, staffing agencies incl. jobFeed.staffingAgencies, LinkedIn Easy Apply only when the company's own posting cannot be found - look for it first per step 2c, skip companies, 2027-grad-only, Amazon SDE), salaryExpectation (drop jobs whose listed pay tops out below the expectation for their area; no salary listed = keep) and `python applog.py check` (already logged -> drop). LAST 24 HOURS ONLY, NO FILLING TO 10: look only at jobs posted in the last browserSearch.postedWithinHours (24) hours, newest first, in one pass over every location. candidatesPerSearch (10) is a cap, not a target: add whatever passes and stop - do NOT widen the time window, try related roles / synonyms, or go to career sites just to reach 10 (browserSearch.widenToFill = false). If nothing passes, say so in the search note. NO POST DATE: a posting that shows no posted date is NOT dropped for that - keep it as a candidate (and apply to it once queued) as long as it passes every other rule; note 'post date not given' in its description. For each, find the company's own posting / apply page (\"Apply on company site\", career site, ATS) as applyUrl. (4) Write them to a JSON file in the session scratchpad: [{source: \"google\"|\"linkedin\", id: <LinkedIn job id or a short unique id>, company, title, location, workMode: \"Remote\"|\"Hybrid\"|\"On-site\", salary (as posted, e.g. \"$90,000 - $120,000\" or \"$40 - $55 /hr\"), posted (ISO date-time), url (the post), applyUrl, description (key requirements, years, tech)}] and run `python jobboard.py add <file> --search <id>` (marks the request done). Do NOT log them in applications.json - the user approves them on the board. (5) Close the search tab and list the candidates in chat: company, title, location, work mode, pay, years required, link - the user approves with Add to apply queue on the board, which starts a queue run (step 2q). (6) Blocked (CAPTCHA, sign-in, 429, no results): `python jobboard.py search <id> failed --note \"<reason>\"` and tell the user.",
       "2u. UPDATE MY ANSWERS: the job board's \"Update my answers\" button lets the user upload a resume (saved in ..\\private\\uploads\\) and then fill in a list of every application question (answerbank.py: the APPLICANT_* contact values, the ANSWER_* bank and common questions not in the bank yet; secrets are never shown). After an upload the watcher prints \"profile request <id>: new resume <path>\". Then: (1) `python jobboard.py profile running`. (2) Read the uploaded resume. (3) Update ..\\private\\resume.json to match it and make it the resume to upload (copy it to the resume path in step 4, or update that path, and ANSWER_RESUME_CURRENT_RESUME). (4) Fill every answer the resume gives - contact values, name, degree / school / graduation / GPA, current and previous job, total and per-skill years, skills, certifications, spoken languages - with `python answerbank.py set KEY \"value\"` (`python answerbank.py missing` lists the open questions); keep the user's existing answers unless the resume shows they changed. (5) `python jobboard.py profile done --note \"<n> answers filled from the resume\"` (or `failed --note <reason>`) - the page then shows the remaining questions to the user. Questions still blank are asked during applications and saved then (step 6d).",
       "2q. QUEUE RUN: work through `python jobboard.py queue` top to bottom, one job at a time, in the browser named in launcher.browserTool (the browser-bridge tools in Google Chrome). For each job: (1) `python jobboard.py applying <key>` (the page shows \"Applying now\"). (2) Open its apply link in a NEW tab (open_tab) - never reuse the tab of a blocked job. (3) Verify the posting per step 3; if it fails a rule, do not apply: log it as Needs approval with the reason, close the tab, next job. Jobs the queue lists as APPROVED BY THE USER (the board's Approve & apply button, applications.json status Approved) skip this check for the rule they failed - apply anyway. Jobs the queue lists as CONTINUE (the user clicked Continue application on a Needs User job - it goes back to the END of the queue) are finished where they stopped: reuse the tab left open if it is still there (else open the logged link), the user may have done the blocked step (sign-in, email code, CAPTCHA) - check the page and carry on. (4) Fill the application manually like a person - text fields, dropdowns, checkboxes, radio buttons, resume upload - with the ANSWER_* / APPLICANT_* values from ..\\private\\.env and the resume per steps 4 / 4a. (5) Account / sign-in pages per step 6b: sign in, or create the account, with APPLICANT_EMAIL + APPLICANT_PASSWORD (typed into the password fields only, never shown anywhere); if that password is empty or rejected, use the wait_for_password hand-off; then continue the same application. (6) Submitted: `python applog.py add --status Submitted --id <job id> --url <link> ...`, then close the tab. (7) Blocked - password hand-off timed out, CAPTCHA, email verification code, site not allowed, a question the answer bank doesn't cover, file picker: leave that tab OPEN, `python applog.py add --status \"Needs User\" --id <job id> --url <link> --notes \"<reason>; tab left open\"` (it shows under \"Waiting on you\" on the board), then go straight to the next job in a new tab - never stop or wait on the whole queue for one blocked job. (8) Browser bridge errors: the bridge already retries each action 3 times; after that, re-read the page and try the step once more, then log the job as Needs User with the error and continue. If the extension is not connected at all, stop the queue run, tell the user once (check the extension badge) and leave the rest of the queue for the next run. End of the queue: a short summary - submitted, needs user (with the tabs left open), needs approval - and python applog.py note \"queue run: <n> submitted, <n> needs user, <n> needs approval\".",
       "2a. FINISH THE QUEUE: a queue run handles EVERY job in `python jobboard.py queue` - each one Submitted, Needs approval, Needs User or Skipped with the reason in applications.json - before it ends.",
@@ -219,7 +289,7 @@
       "4a. EXPERIENCE FROM RESUME: fill every work-experience / education / skills section from ..\\private\\resume.json (structured copy of the resume PDF) - all jobs with title, company, location, from/to dates (MM/YYYY, \"currently work here\" for the current job), and always fill each \"Role Description\" / responsibilities box with that job's bullets (one per line, \"- \" prefix). If the resume PDF changes, update resume.json too.",
       "5. STRETCH / unclear (experienceYears.stretchAt years, unusual tech, low pay) -> log as \"Needs approval\" in applications.json, do not apply.",
       "6. BLOCKED (sign-in, new account, file picker, password, CAPTCHA, arbitration agreement, unknown personal question) -> fill what is possible, LEAVE THE TAB OPEN, log as \"Needs User\" with the tab / URL; the user finishes manually.",
-      "6b. LOGIN PAGES / NEW ACCOUNTS: use ${APPLICANT_EMAIL} and the password in ${APPLICANT_PASSWORD} (..\\private\\.env) to sign in, or to CREATE an account when the site has none for that email (Create account / Register: email, password + confirm, name, privacy/accept checkboxes). Type the password straight into the password fields only - never print it in chat, logs, notes, applications.json or any other file. Retry each step up to 3 times. If APPLICANT_PASSWORD is empty, or the site rejects it (password rules, existing account with another password), fall back to the wait_for_password hand-off (the user fills it with Chrome's password manager). Email verification codes / CAPTCHAs still need the user: leave the tab open, log it as Needs User, and continue with the next job. List all waiting tabs in the queue run summary. When sign-in fails (account unverified, password rejected, sign-in does nothing), always try Create Account next with the same email and password before resending a verification email; only if account creation is refused fall back to Forgot password / verification email and log Needs User.",
+      "6b. LOGIN PAGES / NEW ACCOUNTS: use ${APPLICANT_EMAIL} and the password in ${APPLICANT_PASSWORD} (..\\private\\.env) to sign in, or to CREATE an account when the site has none for that email (Create account / Register: email, password + confirm, name, privacy/accept checkboxes). Type the password straight into the password fields only - never print it in chat, logs, notes, applications.json or any other file. Retry each step up to 3 times. If APPLICANT_PASSWORD is empty, or the site rejects it (password rules, existing account with another password), fall back to the wait_for_password hand-off (the user fills it with Chrome's password manager). Email verification codes / CAPTCHAs still need the user: leave the tab open, log it as Needs User, and continue with the next job. List all waiting tabs in the queue run summary. When sign-in fails (account unverified, password rejected, sign-in does nothing), always try Create Account next with the same email and password before resending a verification email; only if account creation is refused fall back to Forgot password / verification email and log Needs User. TYPE_SECRET: type the password with the browser bridge tool type_secret (name APPLICANT_PASSWORD, ref = the password field) - the bridge reads it from private/.env and types it, Claude never reads or sees the value (reading it via Bash is blocked by the permission check). Use it for every password + confirm field; wait_for_password only if type_secret fails or the site rejects the password.",
       "6c. SITE NOT ALLOWED: if the browser bridge says \"Site not allowed: <domain>\", do not stop or wait - log the job as \"Needs User\" with note \"site not allowed: <domain>\" + the URL, leave the tab open, and continue with the next job. Mention blocked domains in the queue run summary.",
       "6d. SAVE EVERY NEW ANSWER: when a form asks a question the ANSWER_* bank does not cover and the user answers it, immediately run: python applog.py answer --section <matching '# --- section ---' in ..\\private\\.env> --question \"<the question>\" --answer \"<the answer>\" - it adds / updates the entry in ..\\private\\.env (and the empty key in ..\\examples\\.env.example). Reuse that answer on later forms without asking again.",
       "7. Never print, log or copy the account password anywhere (it lives only in ..\\private\\.env as APPLICANT_PASSWORD and is typed only into a site's password fields), never solve CAPTCHAs. Close tabs of finished/skipped jobs.",
