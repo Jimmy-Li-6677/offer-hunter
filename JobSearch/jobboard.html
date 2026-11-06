@@ -61,7 +61,11 @@
   .bulk { display: none; align-items: center; gap: 8px; margin-bottom: 12px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--accent); border-radius: var(--radius); }
   .bulk.show { display: flex; }
   #list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
-  #list > .empty, #list > .hidden-note, #list > .pager { grid-column: 1 / -1; }
+  #list > .empty, #list > .hidden-note, #list > .pager, #list > .listbar { grid-column: 1 / -1; }
+  .listbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .listbar .hidden-note { margin: 0; flex: 1; }
+  button.danger { color: var(--bad); border-color: var(--bad); }
+  button.danger.armed { background: var(--bad); color: var(--panel); }
   @media (max-width: 700px) { #list { grid-template-columns: minmax(0, 1fr); } }
   .pager { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 4px; }
   .pager .meta { min-width: 120px; text-align: center; }
@@ -153,6 +157,10 @@
   .ss-opts label { display: inline-flex; gap: 6px; align-items: center; }
   .ss-opts label[hidden] { display: none; }
   .ss-help { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .ss-q { display: inline-flex; align-items: center; gap: 2px; }
+  .ss-q button { padding: 0 5px; min-height: 0; line-height: 1.4; }
+  .ss-add { display: flex; gap: 6px; margin-top: 8px; }
+  .ss-add input { flex: 1; min-width: 0; font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
   @media (max-width: 640px) { .ss-grid { grid-template-columns: minmax(0, 1fr); } .ss-grid > .k { padding-top: 0; } }
 </style>
 </head>
@@ -192,6 +200,13 @@
       <option value="125000">$125K+</option>
       <option value="150000">$150K+</option>
       <option value="200000">$200K+</option>
+    </select>
+    <select id="level" title="Experience level (simplify.jobs tags, else read from the title / description)">
+      <option value="">Any level</option>
+      <option value="entry">New Grad / Entry / Junior</option>
+      <option value="mid">Mid level</option>
+      <option value="high">Senior and above</option>
+      <option value="none">Level not stated</option>
     </select>
     <label class="inline" id="payNoneWrap" hidden><input type="checkbox" id="payNone" checked> include not listed</label>
   </div>
@@ -277,10 +292,14 @@
         </select>
         <label id="ssNoPayWrap" hidden><input type="checkbox" id="ssNoPay" checked> include not listed</label>
       </div>
-      <label class="k" for="ssQueries">Role searches</label>
+      <span class="k">Role searches</span>
       <div>
-        <textarea id="ssQueries" spellcheck="false"></textarea>
-        <div class="ss-help">One search per line.</div>
+        <div class="ss-opts" id="ssQueries"></div>
+        <div class="ss-add">
+          <input type="text" id="ssNewQuery" spellcheck="false" placeholder="Add a role search, e.g. platform engineer" aria-label="New role search">
+          <button type="button" id="ssAddQuery">Add</button>
+        </div>
+        <div class="ss-help">Tick the searches to run (up to 20). Added searches are remembered in this browser (✕ removes one).</div>
       </div>
       <span class="k">Search filters</span>
       <div class="ss-opts">
@@ -331,13 +350,13 @@ function loadPrefs() {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS) || "{}");
     state.hide = new Set(p.hide || []);
-    state.area = p.area || ""; $("pay").value = p.pay || ""; $("payNone").checked = p.payNone !== false;
+    state.area = p.area || ""; $("pay").value = p.pay || ""; $("level").value = p.level || ""; $("payNone").checked = p.payNone !== false;
   } catch (e) { /* storage blocked: defaults */ }
 }
 function savePrefs() {
   try {
     localStorage.setItem(PREFS, JSON.stringify({ hide: [...state.hide], area: $("area").value, pay: $("pay").value,
-                                                 payNone: $("payNone").checked }));
+                                                 level: $("level").value, payNone: $("payNone").checked }));
   } catch (e) { /* storage blocked: choices last until reload */ }
 }
 
@@ -375,6 +394,9 @@ async function api(path, body) {
 function showError(msg) { const e = $("error"); e.textContent = msg; e.hidden = !msg; }
 
 function apply(data) {
+  const wasBusy = poll.busy;
+  poll.busy = isBusy(data);
+  if (poll.busy && !wasBusy) schedule();  // a click started a search / queued a job: poll fast from now on
   if (data.experienceYears) state.expLimits = data.experienceYears;
   state.jobs = data.jobs || [];
   const keys = new Set(state.jobs.map(j => j.key));
@@ -461,13 +483,40 @@ function openSimplify() {
   $("ssPay").value = p.pay || "";
   $("ssNoPay").checked = p.includeNoPay !== false;
   $("ssNoPayWrap").hidden = !Number($("ssPay").value);
-  $("ssQueries").value = (p.queries && p.queries.length ? p.queries : d.queries).join("\n");
+  ssDefaults = d.queries || [];
+  renderQueries(uniq([...ssDefaults, ...(p.allQueries || []), ...(p.queries || [])]),
+    p.queries && p.queries.length ? p.queries : ssDefaults);
+  $("ssNewQuery").value = "";
   $("ssFilters").checked = p.searchFilters !== false;
   $("ssStatus").textContent = "";
   $("ssGo").disabled = false;
   $("ssDlg").showModal();
 }
 const checkedIn = id => [...$(id).querySelectorAll("input:checked")].map(c => c.value);
+// Role searches: a checkbox per search - the config's default queries plus the ones added here (✕ on added ones)
+let ssDefaults = [];
+const uniq = list => list.filter((q, i) => list.findIndex(x => x.toLowerCase() === q.toLowerCase()) === i);
+const allQueries = () => [...$("ssQueries").querySelectorAll("input")].map(c => c.value);
+// "*" = every title in the software job categories, like browsing a category on simplify.jobs
+const queryLabel = q => q === "*" ? "All job titles (whole category, like the simplify.jobs site)" : q;
+function renderQueries(all, on) {
+  $("ssQueries").innerHTML = all.map(q => `<span class="ss-q"><label><input type="checkbox" value="${esc(q)}" ${on.includes(q) ? "checked" : ""}> ${esc(queryLabel(q))}</label>` +
+    (ssDefaults.includes(q) ? "" : `<button type="button" class="ghost" data-q="${esc(q)}" aria-label="Remove ${esc(q)}">✕</button>`) + "</span>").join("");
+}
+function addQuery() {
+  const q = $("ssNewQuery").value.trim().replace(/\s+/g, " ");
+  if (!q) return;
+  const all = allQueries(), same = all.find(x => x.toLowerCase() === q.toLowerCase());
+  renderQueries(same ? all : [...all, q], [...checkedIn("ssQueries"), same || q]);
+  $("ssNewQuery").value = "";
+  $("ssNewQuery").focus();
+}
+$("ssAddQuery").onclick = addQuery;
+$("ssNewQuery").addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); addQuery(); } });
+$("ssQueries").addEventListener("click", ev => {
+  const b = ev.target.closest("button[data-q]");
+  if (b) renderQueries(allQueries().filter(q => q !== b.dataset.q), checkedIn("ssQueries"));
+});
 $("ssPay").addEventListener("input", () => { $("ssNoPayWrap").hidden = !Number($("ssPay").value); });
 $("ssClose").onclick = () => $("ssDlg").close();
 $("ssForm").addEventListener("submit", async ev => {
@@ -476,14 +525,15 @@ $("ssForm").addEventListener("submit", async ev => {
   const options = {
     hours: Number($("ssHours").value), areas: checkedIn("ssAreas"), levels: checkedIn("ssLevels"), workModes: checkedIn("ssModes"),
     minPay: Number(pay) || 0, payListed: pay === "listed", includeNoPay: $("ssNoPay").checked,
-    queries: $("ssQueries").value.split("\n").map(s => s.trim()).filter(Boolean),
+    queries: checkedIn("ssQueries"),
     searchFilters: $("ssFilters").checked,
   };
   if (!options.areas.length) { $("ssStatus").textContent = "Pick at least one location."; return; }
   if (!options.levels.length) { $("ssStatus").textContent = "Pick at least one experience level."; return; }
   if (!options.workModes.length) { $("ssStatus").textContent = "Pick at least one work mode."; return; }
-  if (!options.queries.length) { $("ssStatus").textContent = "Add at least one role search."; return; }
-  try { localStorage.setItem(SS_PREFS, JSON.stringify({ ...options, pay })); } catch (e) { /* storage blocked */ }
+  if (!options.queries.length) { $("ssStatus").textContent = "Tick at least one role search."; return; }
+  if (options.queries.length > 20) { $("ssStatus").textContent = "Tick at most 20 role searches."; return; }
+  try { localStorage.setItem(SS_PREFS, JSON.stringify({ ...options, pay, allQueries: allQueries() })); } catch (e) { /* storage blocked */ }
   $("ssGo").disabled = true;
   $("ssStatus").textContent = "Starting the search…";
   try {
@@ -523,6 +573,8 @@ function passes(j) {
   if (area === "~other" ? (j.areas || []).length : area && !(j.areas || []).includes(area)) return false;
   if (pay === "listed" && j.payMax == null) return false;
   if (pay && pay !== "listed" && (j.payMax == null ? !$("payNone").checked : j.payMax < Number(pay))) return false;
+  const lvl = $("level").value, classes = levelLabels(j).map(levelClass);
+  if (lvl === "none" ? classes.length : lvl && !classes.includes(lvl)) return false;
   return !(j.flags || []).some(f => state.hide.has(f));
 }
 
@@ -547,7 +599,7 @@ function render() {
   if (!state.jobs.length) {
     $("list").innerHTML = `<div class="empty">No jobs on the board yet.<br>Click <b>Search Google Jobs</b>, <b>Search LinkedIn</b> or <b>Search SimplifyJobs</b> - Claude finds about 10 candidates for you to approve.</div>`;
   } else if (!list.length) {
-    const msg = state.hiddenCount ? `All ${state.hiddenCount} jobs in this view are hidden by your location / salary / filter choices.`
+    const msg = state.hiddenCount ? `All ${state.hiddenCount} jobs in this view are hidden by your location / salary / level / filter choices.`
       : state.tab === "review" ? "Nothing new to review. Click a search button for new candidates." : "No jobs in this view.";
     $("list").innerHTML = `<div class="empty">${msg}</div>`;
   } else {
@@ -558,7 +610,10 @@ function render() {
         <button data-page="${state.page - 1}" ${state.page === 0 ? "disabled" : ""}>← Previous</button>
         <span class="meta">Page ${state.page + 1} of ${pages} · ${from + 1}-${Math.min(from + PAGE_SIZE, list.length)} of ${list.length}</span>
         <button data-page="${state.page + 1}" ${state.page === pages - 1 ? "disabled" : ""}>Next →</button></div>` : "";
-    $("list").innerHTML = (state.hiddenCount ? `<div class="hidden-note">${state.hiddenCount} hidden by your location / salary / filter choices</div>` : "")
+    const note = state.hiddenCount ? `<div class="hidden-note">${state.hiddenCount} hidden by your location / salary / level / filter choices</div>` : `<div class="hidden-note"></div>`;
+    const removeAll = state.tab === "review"
+      ? `<button class="danger ${state.armRemove ? "armed" : ""}" data-act="removeall" title="Delete these jobs from the board - later searches won't add them again">${state.armRemove ? `Click again to remove ${list.length}` : `Remove all ${list.length}${state.hiddenCount ? " shown" : ""}`}</button>` : "";
+    $("list").innerHTML = (state.hiddenCount || removeAll ? `<div class="listbar">${note}${removeAll}</div>` : "")
       + list.slice(from, from + PAGE_SIZE).map(card).join("") + pager;
   }
 
@@ -598,15 +653,18 @@ function facts(j) {
     </div>`;
 }
 
-function levelBadges(j) {  // New Grad / Junior / Mid Level ... next to the title: simplify.jobs tags, else the level read from the posting
+// New Grad / Junior / Mid Level ...: simplify.jobs tags, else the level read from the posting
+function levelLabels(j) {
   const e = j.experience || {};
-  const labels = (e.tag ? e.tag.split(" / ") : [e.level]).filter(Boolean);
-  return labels.map(l => {
-    const c = /new grad|entry|early career|junior|associate|intern|level i$/i.test(l) ? "entry"
-      : /mid|level ii$/i.test(l) ? "mid"
-      : /senior|staff|lead|expert|principal|level iii/i.test(l) ? "high" : "other";
-    return `<span class="lvlbadge ${c}" title="Experience level">${esc(l)}</span>`;
-  }).join("");
+  return (e.tag ? e.tag.split(" / ") : [e.level]).filter(Boolean);
+}
+function levelClass(l) {
+  return /new grad|entry|early career|junior|associate|intern|level i$/i.test(l) ? "entry"
+    : /mid|level ii$/i.test(l) ? "mid"
+    : /senior|staff|lead|expert|principal|level iii/i.test(l) ? "high" : "other";
+}
+function levelBadges(j) {
+  return levelLabels(j).map(l => `<span class="lvlbadge ${levelClass(l)}" title="Experience level">${esc(l)}</span>`).join("");
 }
 
 function card(j) {
@@ -642,7 +700,7 @@ function card(j) {
           <span class="pill ${pillClass(s)}">${esc(pillText(s))}</span>
         </div>
         <div class="sub">
-          <span><b>${esc(j.company)}</b></span>
+          <span><b>${esc(j.company)}</b>${j.companySize ? ` · ${esc(j.companySize)} employees` : ""}</span>
           <span>${esc(j.location || "location not given")}${j.remote ? " · remote" : ""}${j.checkLocation ? " · check location" : ""}</span>
           <span>${esc(ago(j.posted))}</span>
           <span>${esc(j.source)}${via ? " · " + via : ""}</span>
@@ -662,6 +720,20 @@ async function waitingAction(key, action, btn) {
   catch (e) { btn.disabled = false; showError("Could not update the job: " + e.message); }
 }
 
+// Remove all (To review tab): first click arms the button, a second click within 4 s removes the jobs shown
+async function removeAll() {
+  if (!state.armRemove) {
+    state.armRemove = true; render();
+    clearTimeout(state.armTimer);
+    state.armTimer = setTimeout(() => { state.armRemove = false; render(); }, 4000);
+    return;
+  }
+  clearTimeout(state.armTimer); state.armRemove = false;
+  const keys = filtered().map(j => j.key);
+  keys.forEach(k => state.checked.delete(k));
+  try { const r = await api("/api/remove", { keys }); showError(""); state.page = 0; apply(r); }
+  catch (e) { showError("Could not remove the jobs: " + e.message + ". Is the job board server still running?"); render(); }
+}
 async function choose(keys, choice) {
   try { const r = await api("/api/choice", { keys, choice }); showError(""); apply(r); }
   catch (e) { showError("Could not save your choice: " + e.message + ". Is the job board server still running?"); }
@@ -680,6 +752,7 @@ document.addEventListener("click", e => {
   if (t.dataset.tab) { state.tab = t.dataset.tab; state.page = 0; render(); return; }
   if (t.dataset.page) { state.page = Number(t.dataset.page); render(); $("list").scrollIntoView({ block: "start" }); return; }
   const act = t.dataset.act, key = t.dataset.key;
+  if (act === "removeall") { removeAll(); return; }
   if (act === "more") { state.expanded.has(key) ? state.expanded.delete(key) : state.expanded.add(key); render(); }
   else if (act === "up") move(key, -1);
   else if (act === "down") move(key, 1);
@@ -701,7 +774,7 @@ $("bulkSelect").onclick = () => { const k = [...state.checked]; state.checked.cl
 $("bulkSkip").onclick = () => { const k = [...state.checked]; state.checked.clear(); choose(k, "skipped"); };
 $("bulkClear").onclick = () => { state.checked.clear(); render(); };
 ["q", "sort", "source"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; render(); }));
-["area", "pay", "payNone"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; savePrefs(); render(); }));
+["area", "pay", "level", "payNone"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; savePrefs(); render(); }));
 $("filtersAll").onclick = () => { state.filters.forEach(f => state.hide.add(f.id)); state.page = 0; savePrefs(); render(); };
 $("filtersNone").onclick = () => { state.hide.clear(); state.page = 0; savePrefs(); render(); };
 loadPrefs();
@@ -818,12 +891,30 @@ $("ansBack").onclick = showResumeStep;
 $("ansSave").onclick = saveAnswers;
 $("ansClose").onclick = () => $("ansDlg").close();
 
-async function load() {
-  try { const d = await api("/api/jobs"); showError(""); apply(d); }
-  catch (e) { showError("Cannot reach the job board server (" + e.message + "). Start it with: python jobboard.py"); }
+// Polling picks up Claude's progress (applying / submitted) and search results: every 5 s while a search or the
+// apply queue is running, every 30 s otherwise, not at all while the tab is hidden. The server answers
+// {unchanged: true} when nothing changed since the version we last got, so the board is not resent.
+const poll = { timer: null, version: "", busy: false };
+function isBusy(d) {
+  const open = r => r && (r.status === "requested" || r.status === "running");
+  return (d.searchRequests || []).some(open) || open(d.profileRequest)
+    || (d.jobs || []).some(j => j.status === "selected" || j.status === "applying");
 }
+function schedule() {
+  clearTimeout(poll.timer);
+  if (!document.hidden) poll.timer = setTimeout(load, poll.busy ? 5000 : 30000);
+}
+async function load() {
+  try {
+    const d = await api("/api/jobs" + (poll.version ? "?v=" + encodeURIComponent(poll.version) : ""));
+    showError("");
+    if (!d.unchanged) apply(d);
+    poll.version = d.version || "";
+  } catch (e) { showError("Cannot reach the job board server (" + e.message + "). Start it with: python jobboard.py"); }
+  schedule();
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden) clearTimeout(poll.timer); else load(); });
 load();
-setInterval(load, 5000); // picks up Claude's progress (applying / submitted) and new feed runs
 </script>
 </body>
 </html>
