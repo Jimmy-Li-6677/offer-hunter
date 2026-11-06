@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  privacy:
+    name: Privacy check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Scan tracked files for personal data
+        run: python .github/scripts/privacy_check.py
+
+  python:
+    name: Python scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile every script
+        run: python -m compileall -q JobSearch .github/scripts
+      - name: Validate example JSON templates
+        run: |
+          python - <<'EOF'
+          import json, pathlib
+          for f in sorted(pathlib.Path("examples").glob("*.json")):
+              json.loads(f.read_text(encoding="utf-8"))
+              print("valid:", f)
+          EOF
+      - name: Scripts start (help output)
+        working-directory: JobSearch
+        run: |
+          python applog.py --help > /dev/null
+          python jobboard.py --help > /dev/null
+
+  bridge:
+    name: Browser bridge (server + extension)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: claude-browser-bridge/server/package-lock.json
+      - name: Install server dependencies
+        working-directory: claude-browser-bridge/server
+        run: npm ci
+      - name: Build server (TypeScript)
+        working-directory: claude-browser-bridge/server
+        run: npm run build
+      - name: Check extension scripts and manifest
+        working-directory: claude-browser-bridge/extension
+        run: |
+          node --check background.js
+          node --check options.js
+          node -e "const m=require('./manifest.json'); if(m.manifest_version!==3) throw new Error('manifest_version must be 3'); console.log('manifest ok, version', m.version)"
+
+  launcher:
+    name: Windows launcher
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build StartJobSearch.exe
+        shell: cmd
+        run: launcher\build.cmd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StartJobSearch
+          path: StartJobSearch.exe
+          retention-days: 7

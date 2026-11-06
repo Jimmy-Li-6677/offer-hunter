@@ -1,0 +1,73 @@
+name: Release
+
+# CD: push a version tag (e.g. `git tag v1.0.0 && git push origin v1.0.0`) to build everything and publish a
+# GitHub Release with a ready-to-use zip (launcher already built, bridge server already compiled).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build and publish release
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Privacy check
+        run: python .github/scripts/privacy_check.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: claude-browser-bridge/server/package-lock.json
+      - name: Build bridge server
+        working-directory: claude-browser-bridge/server
+        run: |
+          npm ci
+          npm run build
+          npm prune --omit=dev
+
+      - name: Build StartJobSearch.exe
+        shell: cmd
+        run: launcher\build.cmd
+
+      - name: Assemble package
+        shell: pwsh
+        run: |
+          $out = "offer-hunter-$env:TAG"
+          New-Item -ItemType Directory $out | Out-Null
+          Copy-Item README.md, SETUP.md, CLAUDE.md, StartJobSearch.exe $out
+          Copy-Item -Recurse JobSearch, examples, launcher $out
+          New-Item -ItemType Directory "$out/private" | Out-Null
+          New-Item -ItemType File "$out/private/.gitkeep" | Out-Null
+          New-Item -ItemType Directory "$out/claude-browser-bridge" | Out-Null
+          Copy-Item claude-browser-bridge/README.md, claude-browser-bridge/START_HERE.md "$out/claude-browser-bridge"
+          Copy-Item -Recurse claude-browser-bridge/extension "$out/claude-browser-bridge"
+          New-Item -ItemType Directory "$out/claude-browser-bridge/server" | Out-Null
+          Copy-Item -Recurse claude-browser-bridge/server/dist, claude-browser-bridge/server/node_modules "$out/claude-browser-bridge/server"
+          Copy-Item claude-browser-bridge/server/package.json, claude-browser-bridge/server/package-lock.json "$out/claude-browser-bridge/server"
+          Get-ChildItem $out -Recurse -Include __pycache__ -Directory | Remove-Item -Recurse -Force
+          Compress-Archive -Path $out -DestinationPath "$out.zip"
+          "ZIP=$out.zip" >> $env:GITHUB_ENV
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:TAG $env:ZIP --title "offer-hunter $env:TAG" --generate-notes --target $env:GITHUB_SHA
