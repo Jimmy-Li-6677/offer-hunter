@@ -132,8 +132,9 @@ def check(j, ctx, key=None):
     pay, expect = jobinfo.salary_annual(j.get("salary") or ""), expected_pay(j, ctx)
     if pay and expect and pay[1] < expect:
         out.append("lowPay")
-    if fc.get("skipClearance", True) and CLEARANCE.search(desc):
-        out.append("clearance")
+    clr = j.get("clearance") if "clearance" in j else jobinfo.clearance_from(f"{title}. {desc}")
+    if fc.get("skipClearance", True) and (clr or {}).get("need") == "active":
+        out.append("clearance")  # the applicant must already hold one (jobinfo.clearance_from); "able to obtain" is OK
     if CBP.search(desc) or CBP.search(title):
         out.append("cbp")
     if GRAD_2027.search(desc) and not GRAD_2025.search(desc):

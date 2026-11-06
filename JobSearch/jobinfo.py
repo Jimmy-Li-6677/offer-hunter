@@ -118,3 +118,61 @@ def experience_from(text, title=""):
     if not level:  # description: only the entry-level labels ("lead projects", "senior engineers" are not the job's level)
         level = next((label for pat, label in _LEVELS[:4] if re.search(pat, text, re.I)), "")
     return {"years": best[0] if best else None, "text": best[1] if best else "", "level": level}
+
+
+# ---------- security clearance (job card "Clearance" box + the "Active clearance required" filter) ----------
+_CLR_TYPE = re.compile(r"\bTS\s*/\s*SCI\b|\bTop[- ]Secret\b|\bTS\b(?=[^.;]{0,30}clearance)|\b(?-i:Secret)\b|\bsecret\s+(?:security\s+)?clearance\b|"
+                       r"\bpublic\s+trust\b|\bpolygraph\b|\bpoly\b(?=\s*(?:required|clearance))|\bDOE\s+[QL]\b|\bsecurity\s+clearance\b|"
+                       r"\bclearance\b", re.I)
+_CLR_OBTAIN = re.compile(r"\b(?:able|ability|eligib\w*|willing\w*|qualif\w*)\s+(?:to\s+)?(?:obtain|get|be granted|receive|acquire)|"
+                         r"\b(?:obtain|acquire)\s+(?:and|&)\s+maintain|\bmust\s+(?:be\s+able\s+to\s+)?obtain|\bto\s+obtain\b|"
+                         r"\beligible\s+for\b|\bwithin\s+\w+\s+(?:days|months)\s+of\s+(?:hire|start)|\bsponsor(?:ship)?\s+(?:for|of)\s+(?:a\s+)?clearance|"
+                         r"\b(?:not|no)\s+(?:required|needed)\b|\bpreferred\b|\bplus\b|\bdesired\b|\bnice to have\b", re.I)
+_CLR_ACTIVE = re.compile(r"\b(?:active|current|existing|in[- ]scope|valid)\b|\b(?:currently\s+)?(?:hold|holds|holding|possess|possesses)\b|"
+                         r"\bmust\s+have\b|\brequire[sd]?\b|\bclearance\s+required\b|\bat\s+the\s+time\s+of\s+(?:application|hire|start)\b|"
+                         r"\bprior\s+to\s+start\b", re.I)
+_CLR_START = re.compile(r"clearance\s+required\s+for\s+start\s*:?\s*(yes|no)", re.I)
+_CLR_NOT_JOB = re.compile(r"\bclearance\s+(?:sale|rack|item|price|height|of\s+(?:snow|debris))|\bcustoms\s+clearance\b|"
+                          r"\bnot\s+a\s+(?:security\s+)?clearance\b|\b(?:no|none)\s+(?:security\s+)?clearance\b|"
+                          r"\b(?:no|without)\s+(?:security\s+)?clearance\s+(?:is\s+)?(?:required|needed)\b", re.I)
+_CLR_NAMES = [(re.compile(r"TS\s*/\s*SCI", re.I), "TS/SCI"), (re.compile(r"top[- ]secret|\bTS\b", re.I), "Top Secret"),
+              (re.compile(r"\bDOE\s+Q\b", re.I), "DOE Q"), (re.compile(r"\bDOE\s+L\b", re.I), "DOE L"),
+              (re.compile(r"\bsecret\b", re.I), "Secret"), (re.compile(r"public\s+trust", re.I), "Public Trust")]
+CLEARANCE_RANK = {"active": 3, "obtain": 2, "public trust": 1, "mentioned": 0}
+
+
+def clearance_from(text):
+    """What the posting says about a security clearance: None, or {'need': 'active' | 'obtain' | 'public trust' |
+    'mentioned', 'type': 'Secret' / 'TS/SCI' / ... or '', 'poly': bool, 'quote': the sentence}. 'active' = the
+    applicant must already hold one (active / current / at the time of application / required for start); 'obtain' =
+    must be able to get one after hire (also "preferred"); 'public trust' = Public Trust only."""
+    text = re.sub(r"\bU\.\s?S\.", "US", text or "")  # "U.S. Government" is not a sentence end
+    best = None
+    start = _CLR_START.search(text)
+    for sent in re.split(r"(?<=[.;!?])\s+|\n+|\s+[•·]\s+", text):
+        if not _CLR_TYPE.search(sent) or _CLR_NOT_JOB.search(sent):
+            continue
+        if re.fullmatch(r"\W*clearance\W*", sent, re.I):
+            continue
+        if not re.search(r"clearance|security|\bDoD\b|government|\bTS\b|SCI|polygraph|public\s+trust|\bDOE\b", sent, re.I):
+            continue  # a bare "Secret" (e.g. a product or slogan), not a clearance
+        trust_only = bool(re.search(r"public\s+trust", sent, re.I)) and not re.search(r"secret|\bTS\b|SCI|polygraph", sent, re.I)
+        if _CLR_OBTAIN.search(sent):
+            need = "public trust" if trust_only else "obtain"
+        elif trust_only:
+            need = "public trust"
+        elif _CLR_ACTIVE.search(sent) or re.search(r"\bTS\s*/\s*SCI\b|polygraph", sent, re.I):
+            need = "active"
+        else:
+            need = "mentioned"
+        kind = next((name for rx, name in _CLR_NAMES if rx.search(sent)), "")
+        found = {"need": need, "type": kind, "poly": bool(re.search(r"polygraph|\bpoly\b", sent, re.I)),
+                 "quote": re.sub(r"\s+", " ", sent).strip()[:220]}
+        if best is None or CLEARANCE_RANK[need] > CLEARANCE_RANK[best["need"]] or (
+                need == best["need"] and kind and not best["type"]):
+            best = found
+    if start and start.group(1).lower() == "yes" and (best is None or best["need"] != "active"):
+        kind = (best or {}).get("type") or next((n for rx, n in _CLR_NAMES if rx.search(text[start.end():start.end() + 80])), "")
+        best = {"need": "active", "type": kind, "poly": bool((best or {}).get("poly")),
+                "quote": re.sub(r"\s+", " ", text[start.start():start.end() + 60]).strip()}
+    return best

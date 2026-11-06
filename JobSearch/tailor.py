@@ -43,7 +43,7 @@ KINDS = [
              r"COBOL|TypeScript|JavaScript|Python|Java|C\+\+|C#|C)$"),
     ("ai", r"\b(AI|ML|LLMs?|GenAI|Generative|Machine learning|Deep learning|NLP|Computer vision|PyTorch|TensorFlow|"
            r"Keras|scikit|Hugging ?Face|LangChain|RAG|Agents?|MCP|OpenAI|Copilot|Cursor|Prompt|Embeddings?|Vector)\b"),
-    ("data", r"\b(SQL|NoSQL|Postgre|MySQL|Oracle|Mongo|Redis|Cassandra|DynamoDB|Elasticsearch|Snowflake|BigQuery|"
+    ("data", r"\b(SQL|NoSQL|Postgre\w*|MySQL|Oracle|Mongo\w*|SQL Server|Redis|Cassandra|DynamoDB|Elasticsearch|Snowflake|BigQuery|"
              r"Redshift|Databricks|Spark|Hadoop|Kafka|RabbitMQ|Airflow|ETL|Data|Databases?|GraphQL|gRPC|REST|APIs?|"
              r"Queues?|Streaming|Pandas|NumPy|Tableau|Power BI|Excel|Microservices|Event)\b"),
     ("devops", r"\b(AWS|Azure|GCP|Google Cloud|Cloud|Docker|Kubernetes|K8s|Terraform|Ansible|Helm|CI/CD|Jenkins|"
@@ -220,8 +220,17 @@ def build(job, cfg=None):
     if not exe:
         return fail("no LaTeX compiler (install MiKTeX: winget install MiKTeX.MiKTeX)")
     master = st["tex"].read_bytes().decode("utf-8")  # bytes: keep the master's line endings
+    # keywords the posting lists as required go first: if the resume gets too long, the last ones are left out
     try:
-        base, placed = tailor_tex(master, keywords)
+        import matchscore  # same folder (lazy: only needed for the order)
+        req_text = matchscore.split_text(job.get("description") or "")[0]
+        required = matchscore.terms(f'{job.get("title", "")}. {req_text}')
+        keywords = sorted(keywords, key=lambda kw: kw not in required)  # stable: click order within each group
+    except Exception:  # never block a build on the ordering
+        pass
+    on_skills = list(keywords)
+    try:
+        base, placed = tailor_tex(master, on_skills)
     except ValueError as e:
         return fail(str(e))
     pl = load_placements()
@@ -231,7 +240,7 @@ def build(job, cfg=None):
     out = st["outDir"] / f'{safe_name(job.get("company", "") + "-" + job.get("title", ""))}-{tag}'
     out.mkdir(parents=True, exist_ok=True)
     stem = Path(st["pdfName"]).stem
-    dropped, missed = [], []
+    dropped, missed, left_out = [], [], []
     while True:
         text, used = base, []
         for kw, p in todo:
@@ -245,11 +254,17 @@ def build(job, cfg=None):
             return fail(err)
         pages = pdf_pages(out / f"{stem}.pdf")
         applied = [kw for kw, _ in used]
-        if pages <= st["maxPages"] or not applied:
+        if pages <= st["maxPages"]:
             break
-        last = applied[-1]  # too long: leave the last rewrite out and build again
-        dropped.insert(0, last)
-        todo = [(kw, p) for kw, p in todo if kw != last]
+        if applied:  # too long: leave the last rewrite out and build again
+            last = applied[-1]
+            dropped.insert(0, last)
+            todo = [(kw, p) for kw, p in todo if kw != last]
+            continue
+        if len(on_skills) <= 1:
+            break
+        left_out.insert(0, on_skills.pop())  # still too long with no rewrites: drop the last added Skills keyword
+        base, placed = tailor_tex(master, on_skills)
     note = "added " + (", ".join(f"{k} -> {v}" for k, v in placed.items()) or "nothing new to Skills (already listed)")
     if used:
         note += " | in experience: " + ", ".join(f"{kw} -> {w}" for kw, w in used)
@@ -257,12 +272,14 @@ def build(job, cfg=None):
         note += f" | Skills only to stay at {st['maxPages']} page(s): {', '.join(dropped)}"
     if missed:
         note += f" | bullet text changed, Skills only: {', '.join(missed)}"
+    if left_out:
+        note += f" | left off the resume to stay at {st['maxPages']} page(s): {', '.join(left_out)}"
     if needs:
         note += f" | not placed yet: {', '.join(needs)}"
     if pages > st["maxPages"]:
         note += f" | WARNING: {pages} pages (more than {st['maxPages']})"
     return {"status": "ready", "pdf": str(out / f"{stem}.pdf"), "added": keywords, "placed": placed, "pages": pages,
-            "bullets": dict(used), "dropped": dropped, "needsPlacement": needs, "note": note}
+            "bullets": dict(used), "dropped": dropped, "leftOut": left_out, "needsPlacement": needs, "note": note}
 
 
 def place(keyword, where, original=None, new=None):

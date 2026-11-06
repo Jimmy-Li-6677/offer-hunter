@@ -352,37 +352,99 @@ def company_size(v):
         return text(v)
 
 
+def _plain(v):
+    """HTML / entity text as one line of plain text."""
+    if isinstance(v, (list, tuple)):
+        v = "; ".join(map(str, v))
+    v = re.sub(r"<\s*(?:li|br|p|div)[^>]*>", "; ", html.unescape(str(v or "")), flags=re.I)
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", v))).strip(" ;")
+
+
+def _job_ld(page):
+    """The page's schema.org JobPosting (JSON-LD) as a dict, or None. Most career sites (Meta, Greenhouse, Lever,
+    Ashby, Workday, SmartRecruiters ...) publish one for search engines."""
+    for m in re.finditer(r"<script[^>]+application/ld\+json[^>]*>(.*?)</script>", page, re.S | re.I):
+        try:
+            data = json.loads(m.group(1).strip())
+        except ValueError:
+            continue
+        items = data if isinstance(data, list) else data.get("@graph", [data]) if isinstance(data, dict) else []
+        for d in items:
+            if isinstance(d, dict) and "JobPosting" in str(d.get("@type")):
+                return d
+    return None
+
+
+def original_posting(click_url):
+    """Follow the job's simplify.jobs/jobs/click link to the company's own posting. Returns (posting URL, text) - the
+    text from its JobPosting JSON-LD (qualifications, responsibilities, skills, description) or, without one, the
+    page's visible text when it names qualifications; ('', '') if it can't be read."""
+    if not click_url:
+        return "", ""
+    req = urllib.request.Request(click_url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            final = re.sub(r"[?&](?:utm_[a-z]+|ref|src|gh_src)=[^&]*", "", r.geturl()).rstrip("?&")
+            page = r.read(3_000_000).decode("utf-8", "replace")
+    except (OSError, ValueError):
+        return "", ""
+    if "simplify.jobs" in final:
+        return "", ""
+    ld = _job_ld(page)
+    if ld:
+        quals = _plain(ld.get("qualifications") or ld.get("experienceRequirements") or ld.get("educationRequirements"))
+        parts = [("Requirements", quals), ("Responsibilities", _plain(ld.get("responsibilities"))),
+                 ("Skills", _plain(ld.get("skills"))), ("Description", _plain(ld.get("description"))[:20000])]
+        return final, " ".join(f"{k}: {v}" for k, v in parts if v)
+    body = re.sub(r"<script.*?</script>|<style.*?</style>", " ", page, flags=re.S | re.I)
+    body = _plain(body)
+    return final, (body[:20000] if re.search(r"qualifications|requirements", body, re.I) else "")
+
+
 def details(job_id):
-    """(posting text, company size) from the job's simplify.jobs page (the search API has no description): requirements
-    first (years / clearance are read from them), then preferred qualifications and the description. ('', '') if
-    unavailable. The size comes from the same page, so it costs no extra request."""
+    """(posting text, company size, Simplify skills, company posting URL) from the job's simplify.jobs page (the search
+    API has no description): requirements first (years / clearance are read from them), then preferred qualifications
+    and the whole description. Simplify hasn't processed every posting yet (no requirements / skills on its page, e.g.
+    a brand-new Meta job): then the company's own posting is read too (original_posting), so the match score, years
+    and clearance see the real qualifications. ('', '', [], '') if unavailable."""
     req = urllib.request.Request(f"https://simplify.jobs/p/{job_id}", headers={"User-Agent": "Mozilla/5.0"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             m = NEXT_DATA.search(r.read().decode("utf-8", "replace"))
         post = json.loads(m.group(1))["props"]["pageProps"]["jobPosting"]
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        return "", "", []
-    plain = lambda v: re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", html.unescape(v or "")))).strip()
-    parts = [("Requirements", "; ".join(post.get("requirements") or [])),
-             ("Preferred", "; ".join(post.get("desirable") or [])), ("Description", plain(post.get("description"))[:20000])]  # whole posting: its own required /
-    # preferred qualifications often come after the responsibilities (match score, years, clearance)
+        return "", "", [], ""
+    reqs, des = post.get("requirements") or [], post.get("desirable") or []
+    resp = post.get("responsibilities") or []
+    # whole posting text: its own required / preferred qualifications often come after the responsibilities
+    parts = [("Requirements", "; ".join(reqs)), ("Preferred", "; ".join(des)),
+             ("Description", (("Responsibilities: " + "; ".join(resp) + ". ") if resp else "") + _plain(post.get("description"))[:20000])]
     size = company_size(((post.get("job") or {}).get("company") or {}).get("company_size"))
     skills = [s.get("name") for s in post.get("skills") or [] if isinstance(s, dict) and s.get("name")]
-    return " ".join(f"{k}: {v}" for k, v in parts if v), size, skills
+    text = " ".join(f"{k}: {v}" for k, v in parts if v)
+    posting_url = ""
+    if not reqs or len(text) < 1500:  # Simplify has no qualifications for it yet: read the company's posting
+        posting_url, own = original_posting(post.get("url"))
+        if own:
+            text = own
+    return text, size, skills, posting_url
 
 
 def add_details(jobs, workers=8):
-    """Put each job's posting text (details) into its description, its company size into companySize and Simplify's
-    skill list into simplifySkills (used by the match score), several pages at a time."""
+    """Put each job's posting text (details) into its description, its company size into companySize, Simplify's
+    skill list into simplifySkills (used by the match score) and the company posting into applyUrl when it was
+    read, several pages at a time."""
     with concurrent.futures.ThreadPoolExecutor(workers) as ex:
-        for j, (text, size, skills) in zip(jobs, ex.map(lambda j: details(j["id"]), jobs)):
+        for j, (text, size, skills, url) in zip(jobs, ex.map(lambda j: details(j["id"]), jobs)):
             if size:
                 j["companySize"] = size
             if skills:
                 j["simplifySkills"] = skills
+            if url and not j.get("applyUrl"):
+                j["applyUrl"] = url
             if text:
-                j["description"] = j["description"].split(". Requirements (years", 1)[0] + ". " + text
+                head = re.split(r"\.? Requirements: |\. Requirements \(years|\.? Description: ", j["description"], maxsplit=1)[0]
+                j["description"] = head.rstrip(".") + ". " + text
 
 
 def candidates(docs, board_jobs, cfg, opts=None, total=None):

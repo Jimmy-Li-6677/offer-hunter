@@ -170,7 +170,8 @@ def card_facts(j):
     exp = j.get("experience") or jobinfo.experience_from(desc, j.get("title", ""))
     if j.get("levels"):  # simplify.jobs tags (Junior / Mid Level): shown on the card only, not used by the filters
         exp = {**exp, "tag": " / ".join(j["levels"])}
-    return {"salary": salary, "experience": exp, "workMode": j.get("workMode") or jobinfo.work_mode(j)}
+    return {"salary": salary, "experience": exp, "workMode": j.get("workMode") or jobinfo.work_mode(j),
+            "clearance": jobinfo.clearance_from(f'{j.get("title", "")}. {desc}')}
 
 
 def experience_limits():
