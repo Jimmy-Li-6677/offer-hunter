@@ -29,7 +29,7 @@ RESUME = applog.PRIVATE / "resume.json"
 # "AWS"), so the count is as fine-grained as the posting.
 VOCAB = {
     # languages
-    "C#": r"c#|c-sharp|csharp", "C++": r"c\+\+|cpp", "C": r"(?-i:C)(?=\s*(?:/|,|and|or)\s*(?:c\+\+|C\+\+))|\bc\s+programming|\bc\s+language",
+    "C#": r"c#|c-sharp|csharp", "C++": r"c\+\+|cpp", "C": r"(?-i:C)(?=\s*(?:/|,|and|or)\s*(?:c\+\+|C\+\+))|c\+\+\s*(?:/|,|and|or)\s*(?-i:C)(?![A-Za-z0-9+#])|\bc\s+programming|\bc\s+language",
     "Java": r"java(?!\s*script)", "JavaScript": r"javascript|(?-i:JS)|ecmascript|es6", "TypeScript": r"typescript|(?-i:TS)",
     "Python": r"python", "Go": r"golang|(?-i:Go)(?=\s+(?:is|and|or|programming|language|developer|services?|code)|\s*[,/)]|$)",
     "Rust": r"(?-i:Rust)", "Kotlin": r"kotlin", "Swift": r"(?-i:Swift)", "Objective-C": r"objective-?c",
@@ -162,6 +162,7 @@ def profile(resume=None):
         parts += [p.get("name", ""), p.get("tech", "")] + list(p.get("bullets") or [])
     parts.append(resume.get("summary") or "")
     skills = terms("\n".join(map(str, listed))) | (terms("\n".join(map(str, parts))) - SKILLS_LIST_ONLY)
+    skills |= {str(x).strip() for x in listed if str(x).strip() in VOCAB}  # an item that IS a keyword name ("C", "Go")
     for t in list(skills):
         skills |= IMPLIES.get(t, set())
     text = "\n".join(map(str, listed + parts))  # for keywords outside VOCAB (e.g. from Simplify's skill list)
@@ -169,8 +170,8 @@ def profile(resume=None):
 
 
 def score(j, prof):
-    """{'score': 0-100 or None (no keywords found), 'label', 'matched', 'missing', 'found', 'required': [have, of],
-    'desired': [have, of]} - matched / missing in the post's order (required part first)."""
+    """{'score': 0-100 or None (no keywords found), 'label', 'matched', 'missing', 'added' (matched only because the
+    user marked them on the card), 'found', 'required': [have, of], 'desired': [have, of]} - matched / missing in the post's order (required part first)."""
     title, desc = j.get("title") or "", j.get("description") or ""
     m = jobinfo._PREFERRED.search(desc)
     req_text, des_text = (desc[:m.start()], desc[m.start():]) if m else (desc, "")
@@ -188,14 +189,18 @@ def score(j, prof):
             if re.search(rf"(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])", prof.get("text", ""), re.I):
                 have.add(name)
     found = sorted(required) + sorted(desired)
+    # keywords the user marked on this job's card as "I have this" (job-board.json addedSkills; tailor.py puts them
+    # on this job's resume)
+    added = [t for t in j.get("addedSkills") or [] if t in found and t not in have]
+    have |= set(added)
     matched = [t for t in found if t in have]
     missing = [t for t in found if t not in have]
     if not found:
-        return {"score": None, "label": "None", "matched": [], "missing": [], "found": 0,
+        return {"score": None, "label": "None", "matched": [], "missing": [], "added": [], "found": 0,
                 "required": [0, 0], "desired": [0, 0]}
     value = round(100 * len(matched) / len(found))
     label = "Strong" if value >= 80 else "Good" if value >= 65 else "Fair" if value >= 50 else "Low"
-    return {"score": value, "label": label, "matched": matched, "missing": missing, "found": len(found),
+    return {"score": value, "label": label, "matched": matched, "missing": missing, "added": added, "found": len(found),
             "required": [len(required & have), len(required)], "desired": [len(desired & have), len(desired)]}
 
 
