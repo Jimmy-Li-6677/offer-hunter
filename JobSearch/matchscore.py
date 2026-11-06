@@ -41,18 +41,18 @@ VOCAB = {
     ".NET": r"\.net(?:\s*core|\s*framework)?|dotnet", "ASP.NET": r"asp\.net(?:\s*core|\s*mvc)?", "LINQ": r"linq",
     ".NET MAUI": r"\.net maui|maui|xamarin", "Entity Framework": r"entity framework|ef core", "Blazor": r"blazor",
     "WPF/WinForms": r"wpf|winforms|windows forms", "Spring": r"spring(?:\s*boot)?", "Django": r"django",
-    "Flask": r"flask", "FastAPI": r"fastapi", "Express": r"express(?:\.js|js)?", "NestJS": r"nest\.?js",
+    "Flask": r"flask", "FastAPI": r"fastapi", "Express": r"express(?:\.js|js)|(?-i:Express)(?=\s*(?:/|,|\)|and\b|or\b))", "NestJS": r"nest\.?js",
     "Laravel": r"laravel", "Hangfire": r"hangfire",
     # frontend / web / mobile
     "React": r"react(?:\.js|js)?(?!\s*native)", "React Native": r"react native", "Angular": r"angular(?:js)?",
     "Vue": r"vue(?:\.js)?", "Next.js": r"next\.js|nextjs", "Node.js": r"node(?:\.js|js)?", "Svelte": r"svelte",
     "Redux": r"redux", "HTML": r"html5?", "CSS": r"css3?|sass|scss|less css", "Tailwind": r"tailwind(?:\s*css)?",
     "Bootstrap": r"bootstrap", "jQuery": r"jquery", "Webpack/Vite": r"webpack|vite|babel", "Leaflet/Maps": r"leaflet|mapbox|gis",
-    "Accessibility": r"accessibility|a11y|wcag", "Responsive design": r"responsive (?:design|web|ui)",
+    "Accessibility": r"(?:web |digital |ui )?accessibility(?! of)|a11y|wcag|ada complian\w*|section 508", "Responsive design": r"responsive (?:design|web|ui)",
     "iOS": r"(?-i:iOS)", "Android": r"android", "Mobile apps": r"mobile app(?:lication)?s?|mobile development",
     "Chrome extensions": r"chrome extensions?|browser extensions?",
     # APIs / architecture
-    "REST APIs": r"rest(?:ful)?(?:\s*apis?|\s*services)?|web\s*apis?", "GraphQL": r"graphql", "gRPC": r"grpc",
+    "REST APIs": r"restful|(?-i:REST)(?:ful)?(?:\s*apis?|\s*services)?|rest\s*apis?|rest\s*services|web\s*apis?", "GraphQL": r"graphql", "gRPC": r"grpc",
     "WebSockets": r"web\s*sockets?|signalr|socket\.io", "API design": r"api design|designing apis",
     "Microservices": r"micro-?services?", "Event-driven": r"event[- ]driven|event bus|message bus|pub/?sub",
     "Message queues": r"message queues?|queues?|queueing|sqs|sns|rabbitmq|service bus",
@@ -87,9 +87,9 @@ VOCAB = {
     "Performance tuning": r"performance (?:tuning|optimi[sz]ation)|profiling|latency",
     # security / compliance
     "Security": r"application security|appsec|security (?:engineering|systems|tools|tooling|platforms?|software|and privacy)|secure coding|threat model(?:ing|ling)?",
-    "Authentication/authorization": r"authentication|authorization|oauth\s*2?|openid|(?-i:SSO)|single sign[- ]on|jwt|(?-i:IAM)|identity and access",
+    "Authentication/authorization": r"authentication|(?<!work )(?<!employment )authorization(?! to work)(?! & sponsorship)|oauth\s*2?|openid|(?-i:SSO)|single sign[- ]on|jwt|(?-i:IAM)|identity and access",
     "Vulnerability management": r"vulnerabilit(?:y|ies)(?:\s*scanning|\s*management|\s*remediation)?|penetration testing|owasp",
-    "Privacy/compliance": r"privacy|gdpr|ccpa|hipaa|soc\s*2|fedramp|pci(?:[- ]dss)?|compliance",
+    "Privacy/compliance": r"(?:data |user |consumer )?privacy(?! (?:statement|notice|policy|act|rights))|gdpr|ccpa|hipaa|soc\s*2|fedramp|pci(?:[- ]dss)?|compliance",
     "Cryptography": r"cryptograph(?:y|ic)|encryption",
     # testing / quality
     "Unit testing": r"unit tests?|unit testing|unit\s*&\s*integration|(?-i:TDD)|test[- ]driven",
@@ -169,12 +169,40 @@ def profile(resume=None):
     return {"skills": skills, "text": text}
 
 
+_SIMPLIFY_PARTS = re.compile(r"\bRequirements: (?P<req>.*?)(?: Preferred: (?P<pref>.*?))?(?: Description: (?P<desc>.*))?$", re.S)
+
+
+# the closing boilerplate of a posting (EEO, benefits, pay, privacy notices) names no skills of the job
+_BOILERPLATE = re.compile(r"equal (?:employment )?opportunity|\bEEO\b|privacy (?:statement|notice|policy)|#LI-|"
+                          r"pay transparency|(?:base )?(?:pay|salary|compensation) range|benefits (?:include|package)|"
+                          r"what we offer|our benefits|reasonable accommodation|e-verify", re.I)
+
+
+def _cut(text):
+    """(required part, preferred part) of a posting's text: split at the first 'preferred / desired / nice to have';
+    the closing boilerplate (first EEO / benefits / pay / privacy marker after the first 300 characters) is left out."""
+    b = _BOILERPLATE.search(text, 300)
+    text = text[:b.start()] if b else text
+    m = jobinfo._PREFERRED.search(text)
+    return (text[:m.start()], text[m.start():]) if m else (text, "")
+
+
+def split_text(desc):
+    """(required text, desired text). Simplify jobs are saved as 'Requirements: ... Preferred: ... Description: <whole
+    posting>': Simplify's two lists plus the posting's own required / preferred sections; other jobs are cut at the
+    first 'preferred / desired / nice to have'."""
+    m = _SIMPLIFY_PARTS.search(desc)
+    if not m:
+        return _cut(desc)
+    post_req, post_pref = _cut(m["desc"] or "")
+    return f'{m["req"]} {post_req}', f'{m["pref"] or ""} {post_pref}'
+
+
 def score(j, prof):
     """{'score': 0-100 or None (no keywords found), 'label', 'matched', 'missing', 'added' (matched only because the
     user marked them on the card), 'found', 'required': [have, of], 'desired': [have, of]} - matched / missing in the post's order (required part first)."""
     title, desc = j.get("title") or "", j.get("description") or ""
-    m = jobinfo._PREFERRED.search(desc)
-    req_text, des_text = (desc[:m.start()], desc[m.start():]) if m else (desc, "")
+    req_text, des_text = split_text(desc)
     required = terms(title) | terms(req_text)
     desired = terms(des_text) - required
     # Simplify's own skill list for the job (simplify.jobs page, when the job came from Simplify): each name is

@@ -8,9 +8,19 @@ Technical Skills line, compiles it with pdfLaTeX (MiKTeX / TeX Live, the same en
 (`python jobboard.py queue` prints the resume to use). Jobs without added keywords use the master resume PDF.
 The master .tex is never changed.
 
+Supporting the keyword in the experience (user 2026-11-06): Claude decides, from the master resume and resume.json,
+whether the user's real experience already covers each added keyword. If one existing bullet truthfully does, it is
+reworded to name the keyword (`python tailor.py place "<kw>" "<entry>" "<original>" "<new>"`, LaTeX copied exactly
+from the master .tex); if not, the keyword stays on the Technical Skills line only (`python tailor.py place "<kw>"
+skills`). Saved in ../private/keyword-placements.json and reused for every later job with that keyword. Rewording
+keeps the resume length; a rewrite that would push it past resumeTailor.maxPages is left out.
+
 Usage (from the JobSearch folder):
-  python tailor.py <job key>       -> build that job's resume now (prints the PDF path)
-  python tailor.py --check         -> show the LaTeX compiler found and the master files
+  python tailor.py <job key>                                -> build that job's resume now (prints the PDF path)
+  python tailor.py --check                                  -> compiler, master files, resume entries
+  python tailor.py placements                               -> saved placement for each keyword
+  python tailor.py place "<kw>" skills                      -> Technical Skills only (experience doesn't show it)
+  python tailor.py place "<kw>" "<entry>" "<original>" "<new>" -> reword that bullet; rebuilds queued jobs using it
 """
 import hashlib
 import json
@@ -117,27 +127,67 @@ def pdf_pages(path):
     return len(re.findall(rb"/Type\s*/Page(?!s)", Path(path).read_bytes()))
 
 
-def build(job, cfg=None):
-    """Build the job's tailored resume. Returns {'status': 'ready' | 'master' | 'failed', 'pdf', 'added', 'note'}."""
-    st = settings(cfg)
-    keywords = list(job.get("addedSkills") or [])
-    if not keywords or not st["enabled"]:
-        return {"status": "master", "pdf": str(st["masterPdf"]), "added": [], "note": "no added keywords - master resume"}
-    if not st["tex"] or not st["tex"].exists():
-        return {"status": "failed", "pdf": str(st["masterPdf"]), "added": keywords,
-                "note": "master .tex not found (resumeTailor.masterTex in the config)"}
-    exe = compiler()
-    if not exe:
-        return {"status": "failed", "pdf": str(st["masterPdf"]), "added": keywords,
-                "note": "no LaTeX compiler (install MiKTeX: winget install MiKTeX.MiKTeX)"}
+# ---------- placements: where each added keyword is supported by the user's real experience ----------
+# ../private/keyword-placements.json, written by Claude (`python tailor.py place ...`) from the master resume and
+# resume.json: either a rewrite of ONE existing bullet that truthfully covers the keyword, or "skills" (the experience
+# doesn't show it -> Technical Skills line only). Reused for every later job with the same keyword.
+PLACEMENTS = PRIVATE / "keyword-placements.json"
+SKILLS_ONLY = "skills"
+
+
+def load_placements():
     try:
-        text, placed = tailor_tex(st["tex"].read_bytes().decode("utf-8"), keywords)  # keep the master's line endings
-    except ValueError as e:
-        return {"status": "failed", "pdf": str(st["masterPdf"]), "added": keywords, "note": str(e)}
-    tag = hashlib.sha1(str(job.get("key", "")).encode()).hexdigest()[:8]  # unique per job
-    out = st["outDir"] / f'{safe_name(job.get("company", "") + "-" + job.get("title", ""))}-{tag}'
-    out.mkdir(parents=True, exist_ok=True)
-    stem = Path(st["pdfName"]).stem
+        return json.loads(PLACEMENTS.read_text(encoding="utf-8")).get("keywords", {})
+    except (OSError, ValueError):
+        return {}
+
+
+def save_placement(keyword, value):
+    data = load_placements()
+    data[keyword] = value
+    PLACEMENTS.write_text(json.dumps({"_about": "Per keyword the user marked 'I have this' on the job board: where = "
+                                      "'skills' (Technical Skills only) or the resume entry whose bullet `original` "
+                                      "(LaTeX, exact text in the master .tex) is replaced by `bullet` in that job's "
+                                      "tailored resume. Written by Claude from the user's real experience (tailor.py).",
+                                      "keywords": data}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+_SUBHEADING = re.compile(r"\\resumeSubheading\s*\{([^}]*)\}")
+_PROJECT = re.compile(r"\\resumeProjectHeading\s*\{\s*\\textbf\{([^}]*)\}")
+
+
+def entries(tex):
+    """[(name, first line, last line)] of each work experience (company) / project that has bullets in the .tex."""
+    lines, out = tex.splitlines(), []
+    for i, l in enumerate(lines):
+        nxt = l + " " + (lines[i + 1] if i + 1 < len(lines) else "")
+        m = (_SUBHEADING.search(nxt) if "\\resumeSubheading" in l else
+             _PROJECT.search(nxt) if "\\resumeProjectHeading" in l else None)
+        if m and any("\\resumeItemListStart" in x for x in lines[i + 1:i + 5]):  # entries with bullets only
+            end = next((k for k in range(i, len(lines)) if "\\resumeItemListEnd" in lines[k]), len(lines) - 1)
+            out.append((re.sub(r"\\(.)", r"\1", m.group(1)).strip(), i, end))
+    return out
+
+
+def entry_names(cfg=None):
+    try:
+        return [n for n, _, _ in entries(settings(cfg)["tex"].read_bytes().decode("utf-8"))]
+    except (OSError, AttributeError):
+        return []
+
+
+def rewrite(tex, where, original, new):
+    """tex with `original` replaced by `new` inside entry `where`, or None when that text is not there (any more)."""
+    lines = tex.splitlines(keepends=True)
+    for name, a, b in entries(tex):
+        if name == where:
+            part = "".join(lines[a:b + 1])
+            if original in part:
+                return "".join(lines[:a]) + part.replace(original, new, 1) + "".join(lines[b + 1:])
+    return None
+
+
+def _compile(exe, out, stem, text):
     (out / f"{stem}.tex").write_bytes(text.encode("utf-8"))
     cmd = [exe, "-interaction=nonstopmode", "-halt-on-error", f"-jobname={stem}", f"{stem}.tex"]
     if "miktex" in exe.lower():
@@ -146,19 +196,87 @@ def build(job, cfg=None):
         r = subprocess.run(cmd, cwd=out, capture_output=True, text=True, encoding="utf-8", errors="replace",
                            timeout=300, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except subprocess.TimeoutExpired:
-        return {"status": "failed", "pdf": str(st["masterPdf"]), "added": keywords, "note": "pdflatex timed out"}
-    pdf = out / f"{stem}.pdf"
-    if r.returncode != 0 or not pdf.exists():
-        err = next((l for l in r.stdout.splitlines() if l.startswith("!")), f"pdflatex exit {r.returncode}")
-        return {"status": "failed", "pdf": str(st["masterPdf"]), "added": keywords, "note": f"LaTeX error: {err}"}
+        return "pdflatex timed out"
+    if r.returncode != 0 or not (out / f"{stem}.pdf").exists():
+        return "LaTeX error: " + next((l for l in r.stdout.splitlines() if l.startswith("!")), f"pdflatex exit {r.returncode}")
     for ext in (".aux", ".log", ".out"):
         (out / f"{stem}{ext}").unlink(missing_ok=True)
-    pages = pdf_pages(pdf)
-    where = ", ".join(f"{k} -> {v}" for k, v in placed.items()) or "all already on the resume"
-    note = f"added {where}"
+    return None
+
+
+def build(job, cfg=None):
+    """Build the job's tailored resume: added keywords on the Technical Skills lines, plus each keyword's placement
+    (a reworded existing bullet, keyword-placements.json); a rewrite that no longer applies or would push the resume past
+    resumeTailor.maxPages is left out (Skills only). Returns {'status': 'ready' | 'master' | 'failed', 'pdf', 'added',
+    'note', 'bullets': {keyword: entry}, 'needsPlacement': [keywords Claude has not placed yet]}."""
+    st = settings(cfg)
+    keywords = list(job.get("addedSkills") or [])
+    fail = lambda note: {"status": "failed", "pdf": str(st["masterPdf"]), "added": keywords, "note": note}
+    if not keywords or not st["enabled"]:
+        return {"status": "master", "pdf": str(st["masterPdf"]), "added": [], "note": "no added keywords - master resume"}
+    if not st["tex"] or not st["tex"].exists():
+        return fail("master .tex not found (resumeTailor.masterTex in the config)")
+    exe = compiler()
+    if not exe:
+        return fail("no LaTeX compiler (install MiKTeX: winget install MiKTeX.MiKTeX)")
+    master = st["tex"].read_bytes().decode("utf-8")  # bytes: keep the master's line endings
+    try:
+        base, placed = tailor_tex(master, keywords)
+    except ValueError as e:
+        return fail(str(e))
+    pl = load_placements()
+    needs = [kw for kw in keywords if kw not in pl]
+    todo = [(kw, pl[kw]) for kw in keywords if kw in pl and pl[kw].get("where") != SKILLS_ONLY]
+    tag = hashlib.sha1(str(job.get("key", "")).encode()).hexdigest()[:8]  # unique per job
+    out = st["outDir"] / f'{safe_name(job.get("company", "") + "-" + job.get("title", ""))}-{tag}'
+    out.mkdir(parents=True, exist_ok=True)
+    stem = Path(st["pdfName"]).stem
+    dropped, missed = [], []
+    while True:
+        text, used = base, []
+        for kw, p in todo:
+            t = rewrite(text, p.get("where"), p.get("original", ""), p.get("bullet", ""))
+            if t is None:
+                missed.append(kw) if kw not in missed else None
+            else:
+                text, used = t, used + [(kw, p["where"])]
+        err = _compile(exe, out, stem, text)
+        if err:
+            return fail(err)
+        pages = pdf_pages(out / f"{stem}.pdf")
+        applied = [kw for kw, _ in used]
+        if pages <= st["maxPages"] or not applied:
+            break
+        last = applied[-1]  # too long: leave the last rewrite out and build again
+        dropped.insert(0, last)
+        todo = [(kw, p) for kw, p in todo if kw != last]
+    note = "added " + (", ".join(f"{k} -> {v}" for k, v in placed.items()) or "nothing new to Skills (already listed)")
+    if used:
+        note += " | in experience: " + ", ".join(f"{kw} -> {w}" for kw, w in used)
+    if dropped:
+        note += f" | Skills only to stay at {st['maxPages']} page(s): {', '.join(dropped)}"
+    if missed:
+        note += f" | bullet text changed, Skills only: {', '.join(missed)}"
+    if needs:
+        note += f" | not placed yet: {', '.join(needs)}"
     if pages > st["maxPages"]:
         note += f" | WARNING: {pages} pages (more than {st['maxPages']})"
-    return {"status": "ready", "pdf": str(pdf), "added": keywords, "placed": placed, "pages": pages, "note": note}
+    return {"status": "ready", "pdf": str(out / f"{stem}.pdf"), "added": keywords, "placed": placed, "pages": pages,
+            "bullets": dict(used), "dropped": dropped, "needsPlacement": needs, "note": note}
+
+
+def place(keyword, where, original=None, new=None):
+    """Save a keyword's placement (checked against the master .tex). Returns an error text, or None."""
+    if where == SKILLS_ONLY:
+        save_placement(keyword, {"where": SKILLS_ONLY})
+        return None
+    tex = settings()["tex"].read_bytes().decode("utf-8")
+    if where not in [n for n, _, _ in entries(tex)]:
+        return f"no resume entry {where!r} (entries: {', '.join(entry_names())})"
+    if not original or not new or rewrite(tex, where, original, new) is None:
+        return "the original text must be copied exactly from that entry's bullet in the master .tex"
+    save_placement(keyword, {"where": where, "original": original, "bullet": new})
+    return None
 
 
 def main(argv):
@@ -171,9 +289,23 @@ def main(argv):
     if argv[0] == "--check":
         st = settings()
         print(f"compiler: {compiler() or 'NOT FOUND'}\nmaster tex: {st['tex']}\nmaster pdf: {st['masterPdf']}\n"
-              f"output: {st['outDir']}")
+              f"output: {st['outDir']}\nresume entries: {', '.join(entry_names())}")
+        return 0
+    if argv[0] == "placements":
+        for kw, p in sorted(load_placements().items()):
+            print(f'{kw}: {p.get("where")}' + (f'\n    was: {p["original"]}\n    now: {p["bullet"]}' if p.get("bullet") else ""))
         return 0
     import jobboard  # same folder (lazy: jobboard imports this module)
+    if argv[0] == "place" and len(argv) in (3, 5):
+        err = place(*argv[1:])
+        if err:
+            print(f"{argv[1]}: {err}")
+            return 1
+        print(f"{argv[1]}: placed ({argv[2]})")
+        for j in jobboard.queue(jobboard.load_board()):  # rebuild queued jobs that use it
+            if argv[1] in (j.get("addedSkills") or []):
+                jobboard.build_resume(j["key"], wait=True)
+        return 0
     return jobboard.build_resume(argv[0], wait=True)
 
 

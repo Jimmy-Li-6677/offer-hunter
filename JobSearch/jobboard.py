@@ -811,6 +811,10 @@ def main():
                     extra = (f' (tailored: + {", ".join(j["addedSkills"])} - also list these in skills fields)'
                              if j.get("addedSkills") else "")
                     print(f'      resume: {r["pdf"]}{extra}')
+                    if r.get("needsPlacement"):
+                        print(f'      PLACE FIRST (step 4b): {", ".join(r["needsPlacement"])} - reword one real bullet '
+                              f'(python tailor.py place "<kw>" "<entry>" "<original>" "<new>") or Skills only '
+                              f'(python tailor.py place "<kw>" skills); that rebuilds this resume')
                 if e and e.get("notes", "").rfind(CONTINUE_NOTE) > e.get("notes", "").rfind("Approved by the user"):
                     print(f'      CONTINUE - the user clicked Continue application: finish this Needs User job where it stopped '
                           f'(reuse its open tab if it is still there; the user may have done the blocked step): {e.get("notes", "")}')
