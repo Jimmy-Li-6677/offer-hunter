@@ -18,6 +18,7 @@ import urllib.request
 
 import applog  # same folder: log helpers
 import jobfilters  # same folder: the search filters
+import simplifysite  # same folder: reads a job's simplify.jobs page (requirements / description)
 
 LISTINGS_URL = "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json"
 REPO_URL = "https://github.com/SimplifyJobs/New-Grad-Positions"
@@ -78,6 +79,10 @@ def candidates(listings, board_jobs, limit, cfg=None):
         if len(found) >= limit:
             break
     found = found[:limit]
+    # the list has no job text: read each job's simplify.jobs page (requirements, preferred / desired
+    # qualifications, description, company size), then check the filters again - years / clearance come from it
+    simplifysite.add_details(found)
+    found = [j for j in found if not jobfilters.check(j, ctx)[0]]
     for j in found:
         j["description"] = f"[widen {step}: last {hours:g}h] " + j["description"]
     return found, step, hours

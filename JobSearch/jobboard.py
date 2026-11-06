@@ -47,6 +47,7 @@ import answerbank  # same folder: the .env answer bank as a question list ("Upda
 import applog  # same folder: log helpers
 import jobfilters  # same folder: the search filters as named checks (checkboxes on the page)
 import jobinfo  # same folder: salary / experience from the job text
+import matchscore  # same folder: resume match score per job (rules, no AI)
 
 HERE = Path(__file__).resolve().parent
 PRIVATE = applog.PRIVATE
@@ -186,6 +187,7 @@ def view(board):
         ctx = jobfilters.context(log_jobs=log_jobs)
     except (OSError, ValueError):
         ctx = None
+    prof = matchscore.profile()  # resume keyword match score: rules only, no AI
     out = []
     for j in board["jobs"].values():
         st, e = status(j, log_jobs)
@@ -194,7 +196,7 @@ def view(board):
         pay = jobinfo.salary_annual(facts["salary"])
         out.append({**j, **facts, "status": st, "logNotes": (e or {}).get("notes", ""),
                     "logUrl": (e or {}).get("url", ""), "logDate": (e or {}).get("date", ""),
-                    "flags": flags, "areas": jobfilters.areas(j, ctx) if ctx else [],
+                    "flags": flags, "areas": jobfilters.areas(j, ctx) if ctx else [], "match": matchscore.score(j, prof),
                     "payMin": pay[0] if pay else None, "payMax": pay[1] if pay else None})
     cfg = config()
     import simplifysite  # same folder
@@ -409,10 +411,10 @@ def set_profile(board, status, note=None):
 
 
 def board_version():
-    """Changes whenever what /api/jobs shows can change: the board, applications.json, the config, .env (Simplify key)
+    """Changes whenever what /api/jobs shows can change: the board, applications.json, the config, .env (Simplify key), resume.json (match scores)
     and the date. The page sends it back so an unchanged board is not rebuilt and resent on every poll."""
     stamps = [dt.date.today().isoformat()]
-    for f in (BOARD, applog.LOG, CONFIG, applog.ENV):
+    for f in (BOARD, applog.LOG, CONFIG, applog.ENV, matchscore.RESUME):
         try:
             stamps.append(str(f.stat().st_mtime_ns))
         except OSError:
