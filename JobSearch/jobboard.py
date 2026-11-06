@@ -15,6 +15,7 @@ Usage (from the JobSearch folder):
   python jobboard.py queue            -> selected jobs still to apply to, in the user's order (exit 1 if none)
   python jobboard.py queue --quiet    -> one line for the queue watcher: "<n> jobs in the apply queue" (exit 0) / "apply queue empty" (exit 1)
   python jobboard.py applying <key>   -> mark a queued job as being applied to now (shown on the page)
+  python tailor.py <key>              -> (re)build a queued job's tailored resume now (normally done when it is queued)
   python jobboard.py watch            -> watcher for a Claude Monitor: prints one line each time jobs are added to the
                                          apply queue or a search button is clicked (within ~2 seconds; full check every
                                          jobBoard.queueCheckSeconds, default 30). Runs until stopped.
@@ -47,6 +48,8 @@ import answerbank  # same folder: the .env answer bank as a question list ("Upda
 import applog  # same folder: log helpers
 import jobfilters  # same folder: the search filters as named checks (checkboxes on the page)
 import jobinfo  # same folder: salary / experience from the job text
+import matchscore  # same folder: resume match score per job (rules, no AI)
+import tailor  # same folder: tailored resume per queued job (master .tex + added keywords)
 
 HERE = Path(__file__).resolve().parent
 PRIVATE = applog.PRIVATE
@@ -186,6 +189,7 @@ def view(board):
         ctx = jobfilters.context(log_jobs=log_jobs)
     except (OSError, ValueError):
         ctx = None
+    prof = matchscore.profile()  # resume keyword match score: rules only, no AI
     out = []
     for j in board["jobs"].values():
         st, e = status(j, log_jobs)
@@ -194,7 +198,7 @@ def view(board):
         pay = jobinfo.salary_annual(facts["salary"])
         out.append({**j, **facts, "status": st, "logNotes": (e or {}).get("notes", ""),
                     "logUrl": (e or {}).get("url", ""), "logDate": (e or {}).get("date", ""),
-                    "flags": flags, "areas": jobfilters.areas(j, ctx) if ctx else [],
+                    "flags": flags, "areas": jobfilters.areas(j, ctx) if ctx else [], "match": matchscore.score(j, prof),
                     "payMin": pay[0] if pay else None, "payMax": pay[1] if pay else None})
     cfg = config()
     import simplifysite  # same folder
@@ -236,6 +240,73 @@ def set_choice(board, keys, choice):
             j["order"] = None
             j.pop("applyingAt", None)
         j["choice"], j["choiceAt"] = choice, now_iso()
+
+
+# ---------- keywords marked "I have this" on a card -> tailored resume for that job (tailor.py) ----------
+def set_skill(board, key, name, add):
+    """Add / remove a keyword in the job's addedSkills. Returns an error text, or None."""
+    j = board["jobs"].get(key)
+    if j is None:
+        return "job not on the board"
+    name = (name or "").strip()
+    if not name or len(name) > 80:
+        return "keyword missing"
+    skills = [s for s in j.get("addedSkills") or [] if s != name]
+    if add:
+        skills.append(name)
+    j["addedSkills"] = skills
+    j.pop("resume", None)  # out of date; rebuilt right away when the job is in the apply queue
+    return None
+
+
+def build_resume(key, wait=False):
+    """Build the job's tailored resume (tailor.build) in a background thread and save the result as the job's
+    `resume` on the board. Jobs without added keywords get the master resume right away. Returns 0 / 1 (CLI)."""
+    with LOCK:
+        board = load_board()
+        j = board["jobs"].get(key)
+        if j is None:
+            print(f"{key}: not on the board")
+            return 1
+        skills = list(j.get("addedSkills") or [])
+        if not skills:
+            j["resume"] = tailor.build(j)
+            save_board(board)
+            if wait:
+                print(f'{key}: {j["resume"]["note"]}: {j["resume"]["pdf"]}')
+            return 0
+        j["resume"] = {"status": "building", "added": skills, "note": "building the tailored resume", "at": now_iso()}
+        save_board(board)
+        job = dict(j)
+
+    def work():
+        try:
+            res = tailor.build(job)
+        except Exception as e:  # never kill the server thread
+            res = {"status": "failed", "pdf": str(tailor.settings()["masterPdf"]), "added": skills, "note": f"error: {e}"}
+        res["at"] = now_iso()
+        with LOCK:
+            b = load_board()
+            jj = b["jobs"].get(key)
+            if jj is not None and list(jj.get("addedSkills") or []) == skills:  # else a newer build is on its way
+                jj["resume"] = res
+                save_board(b)
+        if wait:
+            print(f'{key}: {res["status"]} - {res["note"]}\n  {res["pdf"]}')
+        return res
+
+    if wait:
+        return 0 if work()["status"] == "ready" else 1
+    threading.Thread(target=work, daemon=True).start()
+    return 0
+
+
+def start_builds(board, keys):
+    """After a save: (re)build the resume of each listed job that is in the apply queue."""
+    for k in keys:
+        j = board["jobs"].get(k)
+        if j and j.get("choice") == "selected":
+            build_resume(k)
 
 
 def reorder(board, keys):
@@ -409,10 +480,10 @@ def set_profile(board, status, note=None):
 
 
 def board_version():
-    """Changes whenever what /api/jobs shows can change: the board, applications.json, the config, .env (Simplify key)
+    """Changes whenever what /api/jobs shows can change: the board, applications.json, the config, .env (Simplify key), resume.json (match scores)
     and the date. The page sends it back so an unchanged board is not rebuilt and resent on every poll."""
     stamps = [dt.date.today().isoformat()]
-    for f in (BOARD, applog.LOG, CONFIG, applog.ENV):
+    for f in (BOARD, applog.LOG, CONFIG, applog.ENV, matchscore.RESUME):
         try:
             stamps.append(str(f.stat().st_mtime_ns))
         except OSError:
@@ -478,6 +549,22 @@ class Handler(BaseHTTPRequestHandler):
                 board = load_board()
                 set_choice(board, body.get("keys", []), body["choice"])
                 save_board(board)
+            if body["choice"] == "selected":
+                start_builds(board, body.get("keys", []))
+            with LOCK:
+                board = load_board()
+            return self.send(200, view(board))
+        if self.path == "/api/skill":
+            with LOCK:
+                board = load_board()
+                err = set_skill(board, body.get("key", ""), body.get("name"), bool(body.get("add")))
+                if not err:
+                    save_board(board)
+            if err:
+                return self.send(400, {"error": err})
+            start_builds(board, [body.get("key", "")])
+            with LOCK:
+                board = load_board()
             return self.send(200, view(board))
         if self.path == "/api/remove":
             with LOCK:
@@ -507,6 +594,9 @@ class Handler(BaseHTTPRequestHandler):
                 err = waiting_action(board, body.get("key", ""), body.get("action", ""))
             if err:
                 return self.send(400, {"error": err})
+            start_builds(board, [body.get("key", "")])
+            with LOCK:
+                board = load_board()
             return self.send(200, view(board))
         if self.path == "/api/answers":
             n = answerbank.save(body.get("answers") or {})
@@ -714,6 +804,17 @@ def main():
                 print(f'{i:>3}. {j["company"]} | {j["title"]} | {j.get("location", "")}'
                       f'{" | APPLYING" if j.get("applyingAt") else ""}\n'
                       f'      key: {j["key"]}  id: {j.get("id") or "-"}\n      {(e or {}).get("url") or j.get("applyUrl") or j.get("url")}')
+                r = j.get("resume") or tailor.build({**j, "addedSkills": []})
+                if j.get("addedSkills") and r.get("status") != "ready":
+                    print(f'      RESUME NOT READY ({r.get("status")}: {r.get("note")}) - run: python tailor.py {j["key"]}')
+                else:
+                    extra = (f' (tailored: + {", ".join(j["addedSkills"])} - also list these in skills fields)'
+                             if j.get("addedSkills") else "")
+                    print(f'      resume: {r["pdf"]}{extra}')
+                    if r.get("needsPlacement"):
+                        print(f'      PLACE FIRST (step 4b): {", ".join(r["needsPlacement"])} - reword one real bullet '
+                              f'(python tailor.py place "<kw>" "<entry>" "<original>" "<new>") or Skills only '
+                              f'(python tailor.py place "<kw>" skills); that rebuilds this resume')
                 if e and e.get("notes", "").rfind(CONTINUE_NOTE) > e.get("notes", "").rfind("Approved by the user"):
                     print(f'      CONTINUE - the user clicked Continue application: finish this Needs User job where it stopped '
                           f'(reuse its open tab if it is still there; the user may have done the blocked step): {e.get("notes", "")}')

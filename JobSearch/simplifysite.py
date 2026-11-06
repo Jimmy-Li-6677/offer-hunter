@@ -362,21 +362,25 @@ def details(job_id):
             m = NEXT_DATA.search(r.read().decode("utf-8", "replace"))
         post = json.loads(m.group(1))["props"]["pageProps"]["jobPosting"]
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        return "", ""
+        return "", "", []
     plain = lambda v: re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", html.unescape(v or "")))).strip()
     parts = [("Requirements", "; ".join(post.get("requirements") or [])),
-             ("Preferred", "; ".join(post.get("desirable") or [])), ("Description", plain(post.get("description"))[:2500])]
+             ("Preferred", "; ".join(post.get("desirable") or [])), ("Description", plain(post.get("description"))[:20000])]  # whole posting: its own required /
+    # preferred qualifications often come after the responsibilities (match score, years, clearance)
     size = company_size(((post.get("job") or {}).get("company") or {}).get("company_size"))
-    return " ".join(f"{k}: {v}" for k, v in parts if v), size
+    skills = [s.get("name") for s in post.get("skills") or [] if isinstance(s, dict) and s.get("name")]
+    return " ".join(f"{k}: {v}" for k, v in parts if v), size, skills
 
 
 def add_details(jobs, workers=8):
-    """Put each job's posting text (details) into its description and its company size into companySize, several
-    pages at a time."""
+    """Put each job's posting text (details) into its description, its company size into companySize and Simplify's
+    skill list into simplifySkills (used by the match score), several pages at a time."""
     with concurrent.futures.ThreadPoolExecutor(workers) as ex:
-        for j, (text, size) in zip(jobs, ex.map(lambda j: details(j["id"]), jobs)):
+        for j, (text, size, skills) in zip(jobs, ex.map(lambda j: details(j["id"]), jobs)):
             if size:
                 j["companySize"] = size
+            if skills:
+                j["simplifySkills"] = skills
             if text:
                 j["description"] = j["description"].split(". Requirements (years", 1)[0] + ". " + text
 

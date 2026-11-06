@@ -69,7 +69,26 @@
   @media (max-width: 700px) { #list { grid-template-columns: minmax(0, 1fr); } }
   .pager { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 4px; }
   .pager .meta { min-width: 120px; text-align: center; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 12px; }
+  /* keyword match score panel (right side of each card) */
+  .score { align-self: start; width: 92px; border-radius: 12px; padding: 10px 8px 9px; text-align: center; border: 2px solid currentColor; cursor: help; }
+  .score .num { display: block; font-size: 32px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+  .score .of { font-size: 13px; font-weight: 600; opacity: .75; }
+  .score .lbl { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
+  .score .sbar { display: block; height: 7px; border-radius: 99px; background: var(--line); margin: 7px 2px 5px; overflow: hidden; }
+  .score .fill { display: block; height: 7px; border-radius: 99px; background: var(--muted); }
+  .score.strong .fill { background: var(--ok); }
+  .score.good .fill { background: var(--accent); }
+  .score.fair .fill { background: var(--warn); }
+  .score.low .fill { background: var(--bad); }
+  .score .kw { display: block; font-size: 11px; opacity: .85; }
+  .score.strong { color: var(--ok); background: var(--ok-soft); }
+  .score.good { color: var(--accent); background: var(--accent-soft); }
+  .score.fair { color: var(--warn); background: var(--warn-soft); }
+  .score.low { color: var(--bad); background: var(--bad-soft); }
+  .score.none { color: var(--muted); background: var(--gray-soft); border-style: dashed; }
+  .score.none .num { font-size: 22px; }
+  @media (max-width: 560px) { .card { grid-template-columns: auto minmax(0, 1fr); } .score { grid-column: 2; width: auto; } }
   .card.selected { border-color: var(--accent); }
   .card .body { display: flex; flex-direction: column; min-width: 0; }  /* cards in a row share a height; buttons sit on the bottom line */
   .card .body > button.ghost { align-self: flex-start; }
@@ -89,6 +108,24 @@
   .lvlbadge.mid { background: var(--accent-soft); color: var(--accent); }
   .lvlbadge.high { background: var(--bad-soft); color: var(--bad); }
   .lvlbadge.other { background: var(--gray-soft); color: var(--muted); }
+  .match { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 10px; white-space: nowrap; cursor: help; }
+  .match.strong { background: var(--ok); color: var(--panel); }
+  .match.good { background: var(--ok-soft); color: var(--ok); }
+  .match.fair { background: var(--warn-soft); color: var(--warn); }
+  .match.low { background: var(--bad-soft); color: var(--bad); }
+  .match.none { background: var(--gray-soft); color: var(--muted); font-weight: 400; }
+  .matchnote { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .matchnote .yes { color: var(--ok); }
+  .matchnote .no { color: var(--bad); }
+  .matchnote button.kwb { font: inherit; font-size: 12px; padding: 0 6px; margin: 1px 0; border-radius: 999px; cursor: pointer; line-height: 18px; }
+  .matchnote button.kwb.miss { color: var(--bad); border: 1px dashed var(--bad); background: transparent; }
+  .matchnote button.kwb.miss:hover { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); border-style: solid; }
+  .matchnote button.kwb.added { color: var(--ok); border: 1px solid var(--ok); background: var(--ok-soft); font-weight: 600; }
+  .matchnote button.kwb.added:hover { text-decoration: line-through; }
+  .resumenote { font-size: 12px; margin-top: 4px; color: var(--muted); }
+  .resumenote.ready { color: var(--ok); }
+  .resumenote.failed { color: var(--bad); }
+  .resumenote.building { color: var(--warn); }
   .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0 2px; }
   .fact { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--gray-soft); min-width: 0; }
   .fact .k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
@@ -99,8 +136,6 @@
   .fact.stretch { background: var(--warn-soft); border-color: transparent; } .fact.stretch .v { color: var(--warn); }
   .fact.senior { background: var(--bad-soft); border-color: transparent; } .fact.senior .v { color: var(--bad); }
   @media (max-width: 560px) { .facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
-  .desc { color: var(--text); font-size: 13px; margin: 6px 0 2px; overflow-wrap: anywhere; }
-  .desc.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .lognote { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .actions { display: flex; gap: 8px; margin-top: auto; padding-top: 8px; flex-wrap: wrap; }
   .actions a { color: var(--accent); font-size: 13px; align-self: center; }
@@ -182,6 +217,7 @@
     <label class="sr" for="sort">Sort</label>
     <select id="sort">
       <option value="posted">Newest posted</option>
+      <option value="match">Best match</option>
       <option value="company">Company</option>
       <option value="title">Title</option>
       <option value="location">Location</option>
@@ -207,6 +243,13 @@
       <option value="mid">Mid level</option>
       <option value="high">Senior and above</option>
       <option value="none">Level not stated</option>
+    </select>
+    <label class="sr" for="minMatch">Minimum match</label>
+    <select id="minMatch" title="Keyword match: share of the post's tech keywords that are on your resume (matchscore.py, rules only, no AI)">
+      <option value="">Any match</option>
+      <option value="50">50%+ match</option>
+      <option value="65">65%+ match</option>
+      <option value="80">80%+ match</option>
     </select>
     <label class="inline" id="payNoneWrap" hidden><input type="checkbox" id="payNone" checked> include not listed</label>
   </div>
@@ -341,7 +384,7 @@ const GROUPS = [
   { id: "skipped", label: "Skipped", match: s => s === "skipped" || s === "Skipped" },
   { id: "all", label: "All", match: () => true },
 ];
-const state = { jobs: [], tab: "review", checked: new Set(), expanded: new Set(), expLimits: { max: 2, stretchAt: 3 },
+const state = { jobs: [], tab: "review", checked: new Set(), expLimits: { max: 2, stretchAt: 3 },
                 filters: [], areas: [], hide: new Set(), page: 0 };
 const PAGE_SIZE = 8;  // job cards per page, two per row
 const $ = id => document.getElementById(id);
@@ -351,12 +394,14 @@ function loadPrefs() {
     const p = JSON.parse(localStorage.getItem(PREFS) || "{}");
     state.hide = new Set(p.hide || []);
     state.area = p.area || ""; $("pay").value = p.pay || ""; $("level").value = p.level || ""; $("payNone").checked = p.payNone !== false;
+    $("minMatch").value = p.minMatch || ""; if (p.sort) $("sort").value = p.sort;
   } catch (e) { /* storage blocked: defaults */ }
 }
 function savePrefs() {
   try {
     localStorage.setItem(PREFS, JSON.stringify({ hide: [...state.hide], area: $("area").value, pay: $("pay").value,
-                                                 level: $("level").value, payNone: $("payNone").checked }));
+                                                 level: $("level").value, payNone: $("payNone").checked,
+                                                 minMatch: $("minMatch").value, sort: $("sort").value }));
   } catch (e) { /* storage blocked: choices last until reload */ }
 }
 
@@ -558,6 +603,9 @@ function filtered() {
   const by = $("sort").value;
   const cmp = {
     posted: (a, b) => (b.posted || "").localeCompare(a.posted || ""),
+    match: (a, b) => ((b.match || {}).score ?? -1) - ((a.match || {}).score ?? -1)
+      || ((b.match || {}).matched || []).length - ((a.match || {}).matched || []).length
+      || (b.posted || "").localeCompare(a.posted || ""),
     company: (a, b) => (a.company || "").localeCompare(b.company || "") || (a.title || "").localeCompare(b.title || ""),
     title: (a, b) => (a.title || "").localeCompare(b.title || ""),
     location: (a, b) => (a.location || "").localeCompare(b.location || ""),
@@ -575,6 +623,8 @@ function passes(j) {
   if (pay && pay !== "listed" && (j.payMax == null ? !$("payNone").checked : j.payMax < Number(pay))) return false;
   const lvl = $("level").value, classes = levelLabels(j).map(levelClass);
   if (lvl === "none" ? classes.length : lvl && !classes.includes(lvl)) return false;
+  const min = Number($("minMatch").value || 0);
+  if (min && ((j.match || {}).score ?? 0) < min) return false;
   return !(j.flags || []).some(f => state.hide.has(f));
 }
 
@@ -667,12 +717,54 @@ function levelBadges(j) {
   return levelLabels(j).map(l => `<span class="lvlbadge ${levelClass(l)}" title="Experience level">${esc(l)}</span>`).join("");
 }
 
+// resume keyword match (matchscore.py: job keywords found in your resume.json, rules only, no AI)
+function scorePanel(j) {
+  const m = j.match;
+  if (!m) return "";
+  if (m.score == null)
+    return `<div class="score none" title="No known tech keywords in this post's text (short or missing description) - open the posting to judge">
+        <span class="num">–</span><span class="lbl">No score</span><span class="kw">no keywords</span></div>`;
+  const r = m.required || [0, 0], d = m.desired || [0, 0];
+  const tip = `Match score ${m.score}/100: ${m.matched.length} of ${m.found} tech keywords in this post are on your resume `
+    + `(required / main part ${r[0]}/${r[1]}, desired / preferred part ${d[0]}/${d[1]})`;
+  return `<div class="score ${esc(m.label.toLowerCase())}" title="${esc(tip)}">
+      <span class="num">${m.score}<span class="of">/100</span></span>
+      <span class="lbl">${esc(m.label)} match</span>
+      <div class="sbar"><div class="fill" style="width:${Math.max(3, m.score)}%"></div></div>
+      <span class="kw">${m.matched.length} of ${m.found} keywords</span></div>`;
+}
+// missing keywords are buttons: click = "I have this" for this job (counted in the score, added to this job's
+// tailored resume when it is in the apply queue - tailor.py); click a green + keyword again to take it back
+const EDIT_SKILLS = ["new", "selected", "skipped", "Needs approval", "Pending", "Candidate", "Approved", "Needs User"];
+function matchNote(j) {
+  const m = j.match;
+  if (!m || !((m.matched || []).length || (m.missing || []).length)) return "";
+  const edit = EDIT_SKILLS.includes(j.status), k = esc(j.key), added = new Set(m.added || []);
+  const own = (m.matched || []).filter(t => !added.has(t)).join(", ");
+  const plus = [...added].map(t => edit
+    ? `<button class="kwb added" data-act="unskill" data-key="${k}" data-name="${esc(t)}" aria-label="Remove ${esc(t)}" title="Added by you for this job's resume - click to remove">+ ${esc(t)}</button>`
+    : `<b>+ ${esc(t)}</b>`).join(" ");
+  const miss = (m.missing || []).map(t => edit
+    ? `<button class="kwb miss" data-act="skill" data-key="${k}" data-name="${esc(t)}" aria-label="I have ${esc(t)}" title="I have this skill - count it and add it to this job's resume">${esc(t)}</button>`
+    : esc(t)).join(edit ? " " : ", ");
+  const yes = [own && esc(own), plus].filter(Boolean).join(own && plus ? ", " : "");
+  return `<div class="matchnote">${yes ? `<span class="yes">✓ You have:</span> ${yes}` : ""}${yes && miss ? " · " : ""}`
+    + `${miss ? `<span class="no">✗ Missing${edit ? " (click the ones you have)" : ""}:</span> ${miss}` : ""}</div>`;
+}
+function resumeNote(j) {
+  const r = j.resume, queued = j.status === "selected" || j.status === "applying";
+  const added = (j.addedSkills || []).length;
+  if (!queued && !(r && r.status === "ready")) return added ? `<div class="resumenote">Resume: a tailored copy with your ${added} added keyword${added > 1 ? "s" : ""} is built when you add this job to the apply queue</div>` : "";
+  if (!r || r.status === "master") return queued ? `<div class="resumenote">Resume: master resume (no added keywords)</div>` : "";
+  const name = (r.pdf || "").split(/[\/]/).slice(-2).join("/");
+  if (r.status === "building") return `<div class="resumenote building">Resume: building the tailored copy (+ ${esc((r.added || []).join(", "))})…</div>`;
+  if (r.status === "failed") return `<div class="resumenote failed">Resume: tailored copy failed - ${esc(r.note || "")} (the master resume will be used)</div>`;
+  return `<div class="resumenote ready" title="${esc(r.pdf || "")}">Resume: tailored ✓ ${esc(r.note || "")} · ${esc(name)}</div>`;
+}
+
 function card(j) {
   const s = j.status, k = esc(j.key);
   const posting = safeUrl(j.url), applyUrl = safeUrl(j.applyUrl);
-  const open = state.expanded.has(j.key);
-  const desc = j.description ? `<div class="desc ${open ? "" : "clamp"}">${esc(j.description)}</div>
-      ${j.description.length > 280 ? `<button class="ghost" data-act="more" data-key="${k}">${open ? "Show less" : "Show more"}</button>` : ""}` : "";
   const canChoose = s === "new" || s === "selected" || s === "skipped";
   const buttons = [];
   if (s === "new" || s === "skipped") buttons.push(`<button class="primary" data-act="selected" data-key="${k}">Add to apply queue</button>`);
@@ -706,11 +798,13 @@ function card(j) {
           <span>${esc(j.source)}${via ? " · " + via : ""}</span>
         </div>
         ${facts(j)}
-        ${desc}
+        ${matchNote(j)}
+        ${resumeNote(j)}
         ${(j.flags || []).length ? `<div class="flagnote">Fails filter: ${esc(j.flags.map(f => (state.filters.find(x => x.id === f) || { label: f }).label).join(" · "))}</div>` : ""}
         ${j.logNotes ? `<div class="lognote">${s === "Needs User" ? "Needs you" : "Log"} (${esc(j.logDate)}): ${esc(j.logNotes)}</div>` : ""}
         <div class="actions">${buttons.join("")}</div>
       </div>
+      ${scorePanel(j)}
     </article>`;
 }
 
@@ -753,7 +847,6 @@ document.addEventListener("click", e => {
   if (t.dataset.page) { state.page = Number(t.dataset.page); render(); $("list").scrollIntoView({ block: "start" }); return; }
   const act = t.dataset.act, key = t.dataset.key;
   if (act === "removeall") { removeAll(); return; }
-  if (act === "more") { state.expanded.has(key) ? state.expanded.delete(key) : state.expanded.add(key); render(); }
   else if (act === "up") move(key, -1);
   else if (act === "down") move(key, 1);
   else if (["selected", "skipped", "new"].includes(act)) { state.checked.delete(key); choose([key], act); }
@@ -761,7 +854,13 @@ document.addEventListener("click", e => {
   else if (act === "skipwaiting") waitingAction(key, "skipped", t);
   else if (act === "approve") waitingAction(key, "approve", t);
   else if (act === "continue") waitingAction(key, "continue", t);
+  else if (act === "skill" || act === "unskill") setSkill(key, t.dataset.name, act === "skill", t);
 });
+async function setSkill(key, name, add, btn) {
+  btn.disabled = true;
+  try { apply(await api("/api/skill", { key, name, add })); showError(""); }
+  catch (e) { btn.disabled = false; showError("Could not save the keyword: " + e.message); }
+}
 document.addEventListener("change", e => {
   const f = e.target.dataset && e.target.dataset.filter;
   if (f !== undefined) { e.target.checked ? state.hide.add(f) : state.hide.delete(f); state.page = 0; savePrefs(); render(); return; }
@@ -773,8 +872,8 @@ document.addEventListener("change", e => {
 $("bulkSelect").onclick = () => { const k = [...state.checked]; state.checked.clear(); choose(k, "selected"); };
 $("bulkSkip").onclick = () => { const k = [...state.checked]; state.checked.clear(); choose(k, "skipped"); };
 $("bulkClear").onclick = () => { state.checked.clear(); render(); };
-["q", "sort", "source"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; render(); }));
-["area", "pay", "level", "payNone"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; savePrefs(); render(); }));
+["q", "source"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; render(); }));
+["area", "pay", "level", "payNone", "minMatch", "sort"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; savePrefs(); render(); }));
 $("filtersAll").onclick = () => { state.filters.forEach(f => state.hide.add(f.id)); state.page = 0; savePrefs(); render(); };
 $("filtersNone").onclick = () => { state.hide.clear(); state.page = 0; savePrefs(); render(); };
 loadPrefs();

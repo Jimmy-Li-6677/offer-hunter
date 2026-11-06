@@ -286,10 +286,14 @@ async function cdp(tabId, method, params = {}) {
 // and convert element rects inside frames to top-level viewport coordinates.
 const PAGE_HELPERS = `
 function __cbbDocs() {
+  // the document, same-origin iframes and open shadow roots (web-component forms, e.g. SmartRecruiters)
   const out = [document];
   const walk = (d) => {
     for (const f of d.querySelectorAll("iframe, frame")) {
       try { const cd = f.contentDocument; if (cd) { out.push(cd); walk(cd); } } catch (e) {}
+    }
+    for (const el of d.querySelectorAll("*")) {
+      if (el.shadowRoot) { out.push(el.shadowRoot); walk(el.shadowRoot); }
     }
   };
   walk(document);
@@ -407,18 +411,20 @@ function pageReadElements({ visibleOnly, query, frameMode }) {
   window.__cbbCounter = window.__cbbCounter || 0;
 
   const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
-  const textOf = (id) => clean(document.getElementById(id)?.innerText);
+  const textOf = (id, root) => clean((root && root.getElementById ? root.getElementById(id) : null)?.innerText
+    || document.getElementById(id)?.innerText);
 
   function labelFor(el) {
     const aria = el.getAttribute("aria-label");
     if (aria) return clean(aria);
     const by = el.getAttribute("aria-labelledby");
     if (by) {
-      const t = by.split(/\s+/).map(textOf).filter(Boolean).join(" ");
+      const t = by.split(/\s+/).map((id) => textOf(id, el.getRootNode())).filter(Boolean).join(" ");
       if (t) return t;
     }
     if (el.id) {
-      const l = el.ownerDocument.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      const l = el.getRootNode().querySelector?.(`label[for="${CSS.escape(el.id)}"]`)
+        || el.ownerDocument.querySelector(`label[for="${CSS.escape(el.id)}"]`);
       if (l) return clean(l.innerText);
     }
     const wrap = el.closest("label");
