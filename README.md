@@ -51,3 +51,9 @@ Useful commands (in `JobSearch\`): `python applog.py open` (jobs waiting on you)
 ## Privacy
 
 Everything personal lives in `private\`, which is gitignored. Keep names, personal paths and real values out of every other file.
+
+## Contributing, CI and releases
+
+- `main` is protected: every change goes through a pull request, and the PR can only be merged when CI passes.
+- **CI** (`.github/workflows/ci.yml`) runs on every pull request and push to `main`: a personal-data scan of all tracked files (`.github/scripts/privacy_check.py` - run it locally with `python .github/scripts/privacy_check.py` before you push), a compile check of the Python scripts and the example JSON templates, a build of the browser bridge server (TypeScript) plus a syntax check of the Chrome extension, and a build of the Windows launcher (`StartJobSearch.exe`, kept as a download on the run for 7 days).
+- **Releases** (`.github/workflows/release.yml`): push a version tag (`git tag v1.0.0`, then `git push origin v1.0.0`) to build everything and publish a GitHub Release with a ready-to-use zip - the launcher is already built and the bridge server already compiled, so `npm install` / `npm run build` are not needed (Node.js is still needed to run the bridge server).
