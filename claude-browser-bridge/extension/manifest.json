@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Claude Browser Bridge",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Lets your local Claude Code MCP server control this Chrome (click, type, select, upload) on sites you allow.",
   "permissions": [
     "debugger",

@@ -117,6 +117,15 @@
   .matchnote { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .matchnote .yes { color: var(--ok); }
   .matchnote .no { color: var(--bad); }
+  .matchnote button.kwb { font: inherit; font-size: 12px; padding: 0 6px; margin: 1px 0; border-radius: 999px; cursor: pointer; line-height: 18px; }
+  .matchnote button.kwb.miss { color: var(--bad); border: 1px dashed var(--bad); background: transparent; }
+  .matchnote button.kwb.miss:hover { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); border-style: solid; }
+  .matchnote button.kwb.added { color: var(--ok); border: 1px solid var(--ok); background: var(--ok-soft); font-weight: 600; }
+  .matchnote button.kwb.added:hover { text-decoration: line-through; }
+  .resumenote { font-size: 12px; margin-top: 4px; color: var(--muted); }
+  .resumenote.ready { color: var(--ok); }
+  .resumenote.failed { color: var(--bad); }
+  .resumenote.building { color: var(--warn); }
   .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0 2px; }
   .fact { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--gray-soft); min-width: 0; }
   .fact .k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
@@ -724,12 +733,33 @@ function scorePanel(j) {
       <div class="sbar"><div class="fill" style="width:${Math.max(3, m.score)}%"></div></div>
       <span class="kw">${m.matched.length} of ${m.found} keywords</span></div>`;
 }
+// missing keywords are buttons: click = "I have this" for this job (counted in the score, added to this job's
+// tailored resume when it is in the apply queue - tailor.py); click a green + keyword again to take it back
+const EDIT_SKILLS = ["new", "selected", "skipped", "Needs approval", "Pending", "Candidate", "Approved", "Needs User"];
 function matchNote(j) {
   const m = j.match;
   if (!m || !((m.matched || []).length || (m.missing || []).length)) return "";
-  const yes = (m.matched || []).join(", "), no = (m.missing || []).join(", ");
-  return `<div class="matchnote">${yes ? `<span class="yes">✓ You have:</span> ${esc(yes)}` : ""}${yes && no ? " · " : ""}`
-    + `${no ? `<span class="no">✗ Missing:</span> ${esc(no)}` : ""}</div>`;
+  const edit = EDIT_SKILLS.includes(j.status), k = esc(j.key), added = new Set(m.added || []);
+  const own = (m.matched || []).filter(t => !added.has(t)).join(", ");
+  const plus = [...added].map(t => edit
+    ? `<button class="kwb added" data-act="unskill" data-key="${k}" data-name="${esc(t)}" aria-label="Remove ${esc(t)}" title="Added by you for this job's resume - click to remove">+ ${esc(t)}</button>`
+    : `<b>+ ${esc(t)}</b>`).join(" ");
+  const miss = (m.missing || []).map(t => edit
+    ? `<button class="kwb miss" data-act="skill" data-key="${k}" data-name="${esc(t)}" aria-label="I have ${esc(t)}" title="I have this skill - count it and add it to this job's resume">${esc(t)}</button>`
+    : esc(t)).join(edit ? " " : ", ");
+  const yes = [own && esc(own), plus].filter(Boolean).join(own && plus ? ", " : "");
+  return `<div class="matchnote">${yes ? `<span class="yes">✓ You have:</span> ${yes}` : ""}${yes && miss ? " · " : ""}`
+    + `${miss ? `<span class="no">✗ Missing${edit ? " (click the ones you have)" : ""}:</span> ${miss}` : ""}</div>`;
+}
+function resumeNote(j) {
+  const r = j.resume, queued = j.status === "selected" || j.status === "applying";
+  const added = (j.addedSkills || []).length;
+  if (!queued && !(r && r.status === "ready")) return added ? `<div class="resumenote">Resume: a tailored copy with your ${added} added keyword${added > 1 ? "s" : ""} is built when you add this job to the apply queue</div>` : "";
+  if (!r || r.status === "master") return queued ? `<div class="resumenote">Resume: master resume (no added keywords)</div>` : "";
+  const name = (r.pdf || "").split(/[\/]/).slice(-2).join("/");
+  if (r.status === "building") return `<div class="resumenote building">Resume: building the tailored copy (+ ${esc((r.added || []).join(", "))})…</div>`;
+  if (r.status === "failed") return `<div class="resumenote failed">Resume: tailored copy failed - ${esc(r.note || "")} (the master resume will be used)</div>`;
+  return `<div class="resumenote ready" title="${esc(r.pdf || "")}">Resume: tailored ✓ ${esc(r.note || "")} · ${esc(name)}</div>`;
 }
 
 function card(j) {
@@ -769,6 +799,7 @@ function card(j) {
         </div>
         ${facts(j)}
         ${matchNote(j)}
+        ${resumeNote(j)}
         ${(j.flags || []).length ? `<div class="flagnote">Fails filter: ${esc(j.flags.map(f => (state.filters.find(x => x.id === f) || { label: f }).label).join(" · "))}</div>` : ""}
         ${j.logNotes ? `<div class="lognote">${s === "Needs User" ? "Needs you" : "Log"} (${esc(j.logDate)}): ${esc(j.logNotes)}</div>` : ""}
         <div class="actions">${buttons.join("")}</div>
@@ -823,7 +854,13 @@ document.addEventListener("click", e => {
   else if (act === "skipwaiting") waitingAction(key, "skipped", t);
   else if (act === "approve") waitingAction(key, "approve", t);
   else if (act === "continue") waitingAction(key, "continue", t);
+  else if (act === "skill" || act === "unskill") setSkill(key, t.dataset.name, act === "skill", t);
 });
+async function setSkill(key, name, add, btn) {
+  btn.disabled = true;
+  try { apply(await api("/api/skill", { key, name, add })); showError(""); }
+  catch (e) { btn.disabled = false; showError("Could not save the keyword: " + e.message); }
+}
 document.addEventListener("change", e => {
   const f = e.target.dataset && e.target.dataset.filter;
   if (f !== undefined) { e.target.checked ? state.hide.add(f) : state.hide.delete(f); state.page = 0; savePrefs(); render(); return; }

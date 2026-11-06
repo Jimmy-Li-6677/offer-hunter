@@ -365,7 +365,8 @@ def details(job_id):
         return "", "", []
     plain = lambda v: re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", html.unescape(v or "")))).strip()
     parts = [("Requirements", "; ".join(post.get("requirements") or [])),
-             ("Preferred", "; ".join(post.get("desirable") or [])), ("Description", plain(post.get("description"))[:2500])]
+             ("Preferred", "; ".join(post.get("desirable") or [])), ("Description", plain(post.get("description"))[:20000])]  # whole posting: its own required /
+    # preferred qualifications often come after the responsibilities (match score, years, clearance)
     size = company_size(((post.get("job") or {}).get("company") or {}).get("company_size"))
     skills = [s.get("name") for s in post.get("skills") or [] if isinstance(s, dict) and s.get("name")]
     return " ".join(f"{k}: {v}" for k, v in parts if v), size, skills
