@@ -297,5 +297,8 @@
       "8. End each queue run with a short summary of submitted / needs approval / needs user (with the tabs left open)."
     ]
   },
-  "answersSource": "The application answer bank lives in ..\\private\\.env as ANSWER_* keys (plus APPLICANT_* for contact). Read it before every application; save each newly answered question with: python applog.py answer --section S --question Q --answer A (autoApplyLoop step 6d)."
+  "answersSource": "The application answer bank lives in ..\\private\\.env as ANSWER_* keys (plus APPLICANT_* for contact). Read it before every application; save each newly answered question with: python applog.py answer --section S --question Q --answer A (autoApplyLoop step 6d).",
+  "matchScore": {
+    "_about": "Keyword match score on each job board card (JobSearch/matchscore.py): plain rules, no AI / no tokens. Score = matched / found: how many of the tech keywords in the post (title + required + desired / preferred qualifications) are on your resume.json - more matches, higher score; shown as e.g. '78% · 7/9'. Experience, level, location and pay are NOT part of it (judge those yourself on the card). Labels: Strong 80+, Good 65+, Fair 50+, Low below; 'no keywords' = the post's text names no known terms. `python matchscore.py` lists every board job's score; `--profile` shows the keywords read from your resume; add terms to VOCAB in matchscore.py."
+  }
 }
