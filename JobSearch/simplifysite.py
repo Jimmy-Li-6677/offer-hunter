@@ -38,7 +38,9 @@ CURSOR = "simplifySiteCursor"  # job board file key: where the next click's batc
 HOSTS = ["js-ha.simplify.jobs", "js1.simplify.jobs", "js2.simplify.jobs", "js3.simplify.jobs"]
 DEFAULTS = {
     "collection": "jobs",
-    "queries": ["software engineer", "software developer", "full stack engineer", "backend engineer",
+    # "*" = every title in the software job categories (functions), like browsing a category on simplify.jobs; the
+    # role phrases only match titles that contain their words
+    "queries": ["*", "software engineer", "software developer", "full stack engineer", "backend engineer",
                 "frontend engineer", "data engineer", "QA engineer", "devops engineer", "machine learning engineer"],
     "queryBy": "title",
     "filterBy": "",
@@ -159,18 +161,15 @@ def search(key, s, o=None, cursor=None):
     """The next batch: up to batchSize DIFFERENT jobs from all the role searches together, newest first, each posted
     no later than the oldest job of the last batch, filtered on the server (server_filter: US, levels, software
     categories, posted within the window). Returns (result documents, new cursor). The cursor ({sig, before: the
-    oldest start_date fetched so far, edge: ids fetched at exactly that time, batch, newest, oldest, beyond, done})
-    moves back in time with every click. When the posted-within window has no older jobs, the next clicks go on past
-    it (beyond = True: older posts, up to maxAgeDays (30) old), so no click fetches the same jobs again; after that
-    the series is done and the next click starts again from the newest. Other options (sig) start a new series."""
+    oldest start_date fetched so far, edge: ids fetched at exactly that time, batch, newest, oldest, done})
+    moves back in time with every click, never past the posted-within window: when the window has no older jobs the
+    series is done and the next click starts again from the newest. Other options (sig) start a new series."""
     sig = signature(s, o)
     fresh = not cursor or cursor.get("sig") != sig or cursor.get("done") or "before" not in cursor
     c = {"sig": sig, "before": None, "edge": [], "batch": 0} if fresh else dict(cursor)
     size = int(s.get("batchSize", s["perPage"]))
     base = {"collection": s["collection"], "query_by": s["queryBy"], "per_page": min(int(s["perPage"]), 250), "page": 1}
-    max_hours = float(s.get("maxAgeDays", 30)) * 24
-    beyond = bool(c.get("beyond")) and o is not None and o["hours"] < max_hours
-    filt = [f for f in (server_filter(s, o, max_hours if beyond else None),) if f]
+    filt = [f for f in (server_filter(s, o),) if f]
     if c["before"] is not None:
         filt.append(f"{s['postedField']}:<={int(c['before'])}")
     if filt:
@@ -191,9 +190,6 @@ def search(key, s, o=None, cursor=None):
     when = lambda d: d.get(s["postedField"]) or 0
     docs = sorted(pool.values(), key=when, reverse=True)[:size]
     c["done"] = not docs or (not more and len(pool) <= size)
-    c["beyond"] = c["past"] = beyond  # past = this batch is from before the window
-    if c["done"] and not beyond and o is not None and o["hours"] < max_hours:
-        c["done"], c["beyond"] = False, True  # window used up: the next click goes on with older posts
     if docs:
         oldest = when(docs[-1])
         c["edge"] = (c["edge"] if oldest == c["before"] else []) + [d["id"] for d in docs if when(d) == oldest]
@@ -208,12 +204,8 @@ def progress(c, s, fetched):
     msg = f"batch {c.get('batch', 0)}: fetched {fetched} different jobs"
     if fetched:
         msg += f" posted {day(c.get('oldest'))} - {day(c.get('newest'))} UTC"
-    if c.get("past"):
-        msg += " (older than the posted-within window)"
     if c["done"]:
-        return msg + " - no older jobs left, the next click starts again from the newest"
-    if c.get("beyond") and not c.get("past"):
-        return msg + " - posted-within window used up, the next click goes on with older posts"
+        return msg + " - posted-within window used up, the next click starts again from the newest"
     return msg + " - the next click fetches the next older jobs"
 
 
@@ -271,6 +263,7 @@ def to_job(d):
         "workMode": mode or ("Remote" if remote and ";" not in location else ""),
         "remote": mode == "Remote" or (not mode and remote and ";" not in location), "levels": levels,
         "functions": [text(x) for x in d.get("functions") or []],
+        "companySize": company_size(first(d, "company_size", "companySize")),
         "salary": salary(d),
         "posted": when(first(d, "posted_date", "date_posted", "start_date", "created_date", "posted_at", "created_at",
                              "updated_date")),  # start_date = posted; updated_date = last refreshed by Simplify
@@ -346,26 +339,44 @@ def wanted(j, o, ctx):
 NEXT_DATA = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
 
 
+# simplify.jobs company_size codes (job.company.company_size on the job page) -> employee ranges
+SIZES = {1: "1-10", 2: "11-50", 3: "51-200", 4: "201-500", 5: "501-1,000", 6: "1,001-5,000", 7: "5,001-10,000",
+         8: "10,001+"}
+
+
+def company_size(v):
+    """Employee range for a simplify.jobs company_size code (or the text itself); '' if unknown."""
+    try:
+        return SIZES.get(int(v), "")
+    except (TypeError, ValueError):
+        return text(v)
+
+
 def details(job_id):
-    """The posting text from the job's simplify.jobs page (the search API has no description): requirements first
-    (years / clearance are read from them), then preferred qualifications and the description. '' if unavailable."""
+    """(posting text, company size) from the job's simplify.jobs page (the search API has no description): requirements
+    first (years / clearance are read from them), then preferred qualifications and the description. ('', '') if
+    unavailable. The size comes from the same page, so it costs no extra request."""
     req = urllib.request.Request(f"https://simplify.jobs/p/{job_id}", headers={"User-Agent": "Mozilla/5.0"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             m = NEXT_DATA.search(r.read().decode("utf-8", "replace"))
         post = json.loads(m.group(1))["props"]["pageProps"]["jobPosting"]
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        return ""
+        return "", ""
     plain = lambda v: re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", html.unescape(v or "")))).strip()
     parts = [("Requirements", "; ".join(post.get("requirements") or [])),
              ("Preferred", "; ".join(post.get("desirable") or [])), ("Description", plain(post.get("description"))[:2500])]
-    return " ".join(f"{k}: {v}" for k, v in parts if v)
+    size = company_size(((post.get("job") or {}).get("company") or {}).get("company_size"))
+    return " ".join(f"{k}: {v}" for k, v in parts if v), size
 
 
 def add_details(jobs, workers=8):
-    """Put each job's posting text (details) into its description, several pages at a time."""
+    """Put each job's posting text (details) into its description and its company size into companySize, several
+    pages at a time."""
     with concurrent.futures.ThreadPoolExecutor(workers) as ex:
-        for j, text in zip(jobs, ex.map(lambda j: details(j["id"]), jobs)):
+        for j, (text, size) in zip(jobs, ex.map(lambda j: details(j["id"]), jobs)):
+            if size:
+                j["companySize"] = size
             if text:
                 j["description"] = j["description"].split(". Requirements (years", 1)[0] + ". " + text
 
@@ -375,10 +386,6 @@ def candidates(docs, board_jobs, cfg, opts=None, total=None):
     filters and the dialog's choices, not on the board yet, newest first, at most opts.limit (0 = all)."""
     o = {"functions": settings(cfg)["functions"], **(opts or options({}, cfg))}
     hours, limit = o["hours"], o["limit"]
-    # jobs from past the window (a series going on with older posts) are not dropped as old
-    oldest = min((d.get(settings(cfg)["postedField"]) or 0 for d in docs), default=0)
-    if oldest:
-        hours = max(hours, (dt.datetime.now(UTC).timestamp() - oldest) / 3600 + 1)
     seen = {simplifyjobs.same_job(j) for j in board_jobs.values()}
     pool = []
     for j in map(to_job, docs):
@@ -394,9 +401,7 @@ def candidates(docs, board_jobs, cfg, opts=None, total=None):
     add_details(found)  # the posting text: years required / clearance can now be checked
     found = [j for j in found if ok(j)][:limit or None]
     for j in found:
-        age = (dt.datetime.now(UTC) - dt.datetime.fromisoformat(j["posted"])).total_seconds() / 3600 if j["posted"] else None
-        tag = f"last {o['hours']:g}h" if age is None or age <= o["hours"] else f"posted {age / 24:.1f} days ago"
-        j["description"] = f"[{tag}] " + j["description"]
+        j["description"] = f"[last {o['hours']:g}h] " + j["description"]
     return found, len(docs) if total is None else total, hours
 
 

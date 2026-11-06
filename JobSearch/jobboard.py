@@ -41,6 +41,7 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 
 import answerbank  # same folder: the .env answer bank as a question list ("Update my answers")
 import applog  # same folder: log helpers
@@ -89,10 +90,12 @@ def now_iso():
 
 
 def merge(board, jobs):
-    """Add / refresh fetched jobs; the user's choice (selected / skipped / order) is kept."""
-    added = 0
+    """Add / refresh fetched jobs; the user's choice (selected / skipped / order) is kept. Removed jobs stay removed."""
+    added, removed = 0, set(board.get("removed", []))
     for j in jobs:
         k = job_key(j)
+        if k in removed:
+            continue
         old = board["jobs"].get(k)
         if old is None:
             added += 1
@@ -101,6 +104,26 @@ def merge(board, jobs):
             keep = {f: old.get(f) for f in ("key", "firstSeen", "choice", "order", "choiceAt", "applyingAt")}
             board["jobs"][k] = {**old, **j, **keep}
     return added
+
+
+REMOVED_KEEP = 5000  # removed job keys remembered so searches don't add them again
+
+
+def remove_jobs(board, keys):
+    """The To review tab's Remove all button: delete jobs still to review (choice new) from the board and remember
+    their keys so later searches skip them. Queued, skipped and logged jobs are never removed. Returns the count."""
+    log_jobs = applog.load()["jobs"]
+    gone = [k for k in keys if (board["jobs"].get(k) or {}).get("choice") == "new"
+            and not log_entry(board["jobs"][k], log_jobs)]
+    for k in gone:
+        del board["jobs"][k]
+    board["removed"] = (board.get("removed", []) + gone)[-REMOVED_KEEP:]
+    return len(gone)
+
+
+def known_jobs(board):
+    """Board jobs plus removed keys - what searches treat as already seen."""
+    return {**dict.fromkeys(board.get("removed", []), {}), **board["jobs"]}
 
 
 def prune(board, log_jobs):
@@ -237,7 +260,9 @@ def request_search(board, source):
     if any(r["source"] == source and r["status"] in OPEN_SEARCH for r in reqs):
         return None
     status = "running" if source in SELF_SEARCH else "requested"  # the watcher announces only "requested" ones
-    r = {"id": f"s{len(reqs) + 1}", "source": source, "status": status, "requestedAt": now_iso(), "note": ""}
+    # next number after the highest id: len(reqs) + 1 repeated the same id once the list was capped at 50
+    n = max([int(r["id"][1:]) for r in reqs if r["id"][1:].isdigit()] + [0]) + 1
+    r = {"id": f"s{n}", "source": source, "status": status, "requestedAt": now_iso(), "note": ""}
     reqs.append(r)
     del reqs[:-50]  # keep the last 50
     return r
@@ -248,7 +273,7 @@ def run_simplify(sid):
     import simplifyjobs  # same folder
     try:
         with LOCK:
-            board_jobs = load_board()["jobs"]
+            board_jobs = known_jobs(load_board())
         jobs, step, hours = simplifyjobs.run(board_jobs)
         with LOCK:
             board = load_board()
@@ -269,7 +294,7 @@ def run_simplify_site(sid, opts):
     try:
         with LOCK:
             board = load_board()
-        jobs, note, cursor = simplifysite.run(board["jobs"], opts=opts, cursor=board.get(simplifysite.CURSOR))
+        jobs, note, cursor = simplifysite.run(known_jobs(board), opts=opts, cursor=board.get(simplifysite.CURSOR))
         with LOCK:
             board = load_board()
             n = merge(board, jobs)
@@ -284,7 +309,8 @@ def run_simplify_site(sid, opts):
 
 
 def set_search(board, sid, status, note=None, found=None):
-    r = next((r for r in board.get("searches", []) if r["id"] == sid), None)
+    # newest first: boards saved before ids were unique can hold the same id more than once
+    r = next((r for r in reversed(board.get("searches", [])) if r["id"] == sid), None)
     if r is None:
         sys.exit(f"no search request {sid}")
     r["status"] = status
@@ -382,6 +408,18 @@ def set_profile(board, status, note=None):
     return r
 
 
+def board_version():
+    """Changes whenever what /api/jobs shows can change: the board, applications.json, the config, .env (Simplify key)
+    and the date. The page sends it back so an unchanged board is not rebuilt and resent on every poll."""
+    stamps = [dt.date.today().isoformat()]
+    for f in (BOARD, applog.LOG, CONFIG, applog.ENV):
+        try:
+            stamps.append(str(f.stat().st_mtime_ns))
+        except OSError:
+            stamps.append("0")
+    return "-".join(stamps)
+
+
 def local_request(handler):
     """Requests must come from this page's own host (blocks DNS-rebinding reads of the answer bank)."""
     return handler.headers.get("Host", "").split(":")[0] in ("127.0.0.1", "localhost")
@@ -412,10 +450,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             return self.send(200, PAGE.read_bytes(), "text/html")
-        if self.path == "/api/jobs":
+        path, _, query = self.path.partition("?")
+        if path == "/api/jobs":
+            version = board_version()  # before reading: a change during the read shows up on the next poll
+            if parse_qs(query).get("v", [None])[0] == version:
+                return self.send(200, {"unchanged": True, "version": version})
             with LOCK:
                 board = load_board()
-            return self.send(200, view(board))
+            return self.send(200, {**view(board), "version": version})
         if self.path == "/api/answers":
             if not local_request(self):
                 return self.send(403, {"error": "forbidden"})
@@ -435,6 +477,12 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 board = load_board()
                 set_choice(board, body.get("keys", []), body["choice"])
+                save_board(board)
+            return self.send(200, view(board))
+        if self.path == "/api/remove":
+            with LOCK:
+                board = load_board()
+                remove_jobs(board, body.get("keys", []))
                 save_board(board)
             return self.send(200, view(board))
         if self.path == "/api/order":
@@ -529,12 +577,14 @@ def watch():
         return code["mod"]
 
     def keys():
-        """(queued job keys, open search requests) or None if the board can't be read right now."""
+        """(queued (job key, time it was queued), open search requests) or None if the board can't be read right now.
+        The time makes a job that left the queue and came back (Continue / Approve & apply) count as new, even when
+        the watcher never saw the queue without it."""
         try:
             m = current()
             with LOCK:
                 board = m.load_board()
-            return ([j["key"] for j in m.queue(board)],
+            return ([(j["key"], j.get("choiceAt")) for j in m.queue(board)],
                     [r for r in board.get("searches", []) + board.get("profileRequests", []) if r["status"] == "requested"])
         except (OSError, ValueError):
             return None
@@ -557,7 +607,8 @@ def watch():
     first = keys() or ([], [])
     seen, seen_req = set(first[0]), {r["id"] for r in first[1]}
     if seen:
-        print(f"{len(seen)} job{'' if len(seen) == 1 else 's'} in the apply queue: {' '.join(sorted(seen))}", flush=True)
+        print(f"{len(seen)} job{'' if len(seen) == 1 else 's'} in the apply queue: {' '.join(sorted(k for k, _ in seen))}",
+              flush=True)
     announce(first[1])
     last_m, last_check = mtime(), time.monotonic()
     while True:
@@ -572,7 +623,7 @@ def watch():
         cur, reqs = got
         new = [k for k in cur if k not in seen]
         if new:
-            print(f"new in apply queue ({len(cur)} queued): {' '.join(new)}", flush=True)
+            print(f"new in apply queue ({len(cur)} queued): {' '.join(k for k, _ in new)}", flush=True)
         announce([r for r in reqs if r["id"] not in seen_req])
         seen, seen_req = set(cur), seen_req | {r["id"] for r in reqs}
 

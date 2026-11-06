@@ -132,6 +132,13 @@ chrome.storage.onChanged.addListener(async (changes) => {
   }
 });
 chrome.debugger.onDetach.addListener((source) => attachedTabs.delete(source.tabId));
+// "Leave site? Changes you made may not be saved" prompts on Claude's tabs: accept them so navigation continues
+// (the application progress is saved server-side by the ATS). Other dialogs (alert/confirm/prompt) are left alone.
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (method === "Page.javascriptDialogOpening" && params?.type === "beforeunload" && source.tabId !== undefined) {
+    chrome.debugger.sendCommand({ tabId: source.tabId }, "Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+  }
+});
 chrome.tabs.onRemoved.addListener((tabId) => {
   attachedTabs.delete(tabId);
   forgetClaudeTab(tabId);
@@ -266,6 +273,10 @@ async function cdp(tabId, method, params = {}) {
   if (!attachedTabs.has(tabId)) {
     await chrome.debugger.attach({ tabId }, "1.3");
     attachedTabs.add(tabId);
+    // Get told about JS dialogs (a "Leave site?" beforeunload prompt freezes the page and every later command).
+    try {
+      await chrome.debugger.sendCommand({ tabId }, "Page.enable");
+    } catch {}
   }
   return chrome.debugger.sendCommand({ tabId }, method, params);
 }
@@ -368,7 +379,26 @@ async function pressKey(tabId, key) {
 
 // ---------- in-page functions (serialized and run inside the tab) ----------
 
-function pageReadElements({ visibleOnly, query }) {
+// visibleOnly/query: filters. frameMode: run by chrome.scripting.executeScript inside one frame (cross-origin iframes
+// that the top-level walker cannot reach): returns { url, lines } (refs without the frame prefix, the caller adds it),
+// or null when this frame is reachable from the top document (already covered by the normal scan).
+function pageReadElements({ visibleOnly, query, frameMode }) {
+  if (frameMode) {
+    if (window === window.top) return null;
+    let reachable = true;
+    try {
+      let w = window;
+      while (w !== w.top) {
+        if (!w.frameElement) { reachable = false; break; }
+        w = w.parent;
+      }
+    } catch (e) {
+      reachable = false;
+    }
+    if (reachable) return null;
+  }
+  const __docs = typeof __cbbDocs === "function" ? __cbbDocs : () => [document];
+  const __offset = typeof __cbbOffset === "function" ? __cbbOffset : () => ({ x: 0, y: 0 });
   const SELECTOR = [
     "a[href]", "button", "input", "select", "textarea", "summary", "[contenteditable='true']",
     "[role=button]", "[role=link]", "[role=combobox]", "[role=checkbox]", "[role=radio]", "[role=option]",
@@ -431,11 +461,11 @@ function pageReadElements({ visibleOnly, query }) {
 
   const vw = window.innerWidth, vh = window.innerHeight;
   const out = [];
-  const all = __cbbDocs().flatMap((d) => [...d.querySelectorAll(SELECTOR)]);
+  const all = __docs().flatMap((d) => [...d.querySelectorAll(SELECTOR)]);
   for (const el of all) {
     if (el.type === "hidden") continue;
     const style = el.ownerDocument.defaultView.getComputedStyle(el);
-    const off = __cbbOffset(el);
+    const off = __offset(el);
     const r0 = el.getBoundingClientRect();
     const rect = { left: r0.left + off.x, right: r0.right + off.x, top: r0.top + off.y, bottom: r0.bottom + off.y, width: r0.width, height: r0.height };
     const rendered = rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
@@ -457,7 +487,82 @@ function pageReadElements({ visibleOnly, query }) {
       break;
     }
   }
+  if (frameMode) return { url: location.href, lines: out };
   return `URL: ${location.href}\nTitle: ${document.title}\n` + out.join("\n");
+}
+
+// Visible text of a cross-origin frame (null for the top frame and frames the top-level scan already reaches).
+function frameText() {
+  if (window === window.top) return null;
+  try {
+    let w = window;
+    while (w !== w.top) {
+      if (!w.frameElement) throw 0;
+      w = w.parent;
+    }
+    return null;
+  } catch (e) {}
+  const t = (document.body?.innerText || "").trim();
+  return t ? { url: location.href, text: t } : null;
+}
+
+// DOM-level actions inside one cross-origin frame (refs "f<frameId>-e<n>"). Real mouse/keyboard input cannot be aimed
+// into these frames reliably, so this sets values and fires the events a person's input would.
+function frameAction({ ref, action, text, clear, option, checked }) {
+  const el = document.querySelector('[data-cbb-ref="' + ref + '"]');
+  if (!el) return { error: `Element ${ref} not found in frame (page changed?). Call read_page again.` };
+  el.scrollIntoView({ block: "center", behavior: "instant" });
+  const fire = (t) => el.dispatchEvent(new Event(t, { bubbles: true }));
+  const label = (el.innerText || el.value || el.getAttribute("aria-label") || "").trim().slice(0, 80);
+  if (action === "click") {
+    el.focus?.();
+    el.click();
+    return { ok: true, label };
+  }
+  if (action === "type") {
+    el.focus?.();
+    if (el.isContentEditable) {
+      el.textContent = clear ? text : el.textContent + text;
+      fire("input");
+    } else {
+      const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
+      setter.call(el, clear ? text : (el.value || "") + text);
+      fire("input");
+      fire("change");
+    }
+    el.blur?.();
+    return { ok: true, value: el.type === "password" ? "••••" : el.value ?? el.textContent };
+  }
+  if (action === "check") {
+    if (!!el.checked !== checked) el.click();
+    if (!!el.checked !== checked) {
+      el.checked = checked;
+      fire("input");
+      fire("change");
+    }
+    return { ok: true, checked: !!el.checked };
+  }
+  if (action === "select") {
+    if (el.tagName !== "SELECT") return { error: `${ref} is not a native <select> (custom dropdowns inside cross-origin frames are not supported) - try click on it, then click the option.` };
+    const want = option.toLowerCase().trim();
+    const opts = [...el.options];
+    const match =
+      opts.find((o) => o.text.trim().toLowerCase() === want || o.value.toLowerCase() === want) ||
+      opts.find((o) => o.text.trim().toLowerCase().startsWith(want)) ||
+      opts.find((o) => o.text.trim().toLowerCase().includes(want));
+    if (!match) return { error: `No option matching "${option}". Options: ${opts.map((o) => o.text.trim()).join(" / ")}` };
+    el.value = match.value;
+    fire("input");
+    fire("change");
+    return { ok: true, selected: match.text.trim() };
+  }
+  if (action === "value") {
+    if (el.type === "checkbox" || el.type === "radio") return { ok: true, value: el.checked };
+    return { ok: true, value: "value" in el ? el.value : el.innerText };
+  }
+  if (action === "scroll") return { ok: true };
+  return { error: `Unknown frame action ${action}` };
 }
 
 function pageCenterOf({ ref }) {
@@ -515,7 +620,7 @@ function pageSelectNative({ ref, option }) {
 
 function pageFindOption({ option }) {
   const want = option.toLowerCase().trim();
-  const candidates = __cbbDocs().flatMap((d) => [...d.querySelectorAll("[role=option], [class*=option]:not([class*=options])")]).filter((o) => {
+  const candidates = __cbbDocs().flatMap((d) => [...d.querySelectorAll("[role=option], [class*=option]:not([class*=options]), [class*=result] li, li[class*=result], [class*=dropdown] li")]).filter((o) => {
     const r = o.getBoundingClientRect();
     return r.width > 0 && r.height > 0;
   });
@@ -529,6 +634,21 @@ function pageFindOption({ option }) {
   const r = match.getBoundingClientRect();
   const off = __cbbOffset(match);
   return { x: r.left + off.x + r.width / 2, y: r.top + off.y + r.height / 2, text: txt(match) };
+}
+
+// Texts of visible dropdown options (custom comboboxes: role=option, react-select, iCIMS/select2-style result lists).
+function pageVisibleOptions() {
+  const sel = "[role=option], [class*=option]:not([class*=options]), [class*=result] li, li[class*=result], [class*=dropdown] li";
+  const out = [];
+  for (const d of __cbbDocs()) {
+    for (const o of d.querySelectorAll(sel)) {
+      const r = o.getBoundingClientRect();
+      const t = (o.innerText || "").replace(/\s+/g, " ").trim();
+      if (r.width > 0 && r.height > 0 && t && !out.includes(t)) out.push(t.slice(0, 80));
+      if (out.length >= 40) return out;
+    }
+  }
+  return out;
 }
 
 // Text currently displayed by a custom combobox (react-select single/multi value, etc.).
@@ -579,8 +699,71 @@ function pagePasswordStatus() {
   };
 }
 
+// ---------- cross-origin frames ----------
+// Refs inside cross-origin iframes look like "f<frameId>-e<n>" (e.g. iCIMS application forms).
+const FRAME_REF = /^f(\d+)-(e\d+)$/;
+
+async function inFrames(tabId, func, args, frameIds) {
+  await getTab(tabId);
+  const target = frameIds ? { tabId, frameIds } : { tabId, allFrames: true };
+  try {
+    // a frame that never finishes loading (ads, captcha) must not hang the whole command
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("frame script timed out")), 8000));
+    return await Promise.race([chrome.scripting.executeScript({ target, func, args: [args] }), timeout]);
+  } catch (e) {
+    if (frameIds) throw e;
+    return [];
+  }
+}
+
+async function frameElementLines(tabId, opts) {
+  const results = await inFrames(tabId, pageReadElements, { ...opts, frameMode: true });
+  const out = [];
+  for (const r of results) {
+    const v = r?.result;
+    if (!v || !v.lines?.length) continue;
+    out.push(`--- frame f${r.frameId}: ${v.url} ---`);
+    for (const line of v.lines) out.push(`f${r.frameId}-${line}`);
+  }
+  return out;
+}
+
+async function frameDo(tabId, ref, action, extra = {}) {
+  const m = FRAME_REF.exec(ref);
+  const [res] = await inFrames(tabId, frameAction, { ref: m[2], action, ...extra }, [Number(m[1])]);
+  const v = res?.result;
+  if (!v) throw new Error(`Frame for ${ref} is gone (page changed?). Call read_page again.`);
+  if (v.error) throw new Error(v.error);
+  return v;
+}
+
 // ---------- command handler ----------
 async function handleCommand(cmd, a) {
+  if (a.ref && FRAME_REF.test(a.ref)) {
+    switch (cmd) {
+      case "click": {
+        const v = await frameDo(a.tabId, a.ref, "click");
+        return `clicked ${a.ref} ${v.label ? JSON.stringify(v.label) : ""} (inside frame)`.trim();
+      }
+      case "type": {
+        const v = await frameDo(a.tabId, a.ref, "type", { text: a.text, clear: !!a.clear });
+        return `typed into ${a.ref}; value now: ${JSON.stringify(v.value)}`;
+      }
+      case "select_option": {
+        const v = await frameDo(a.tabId, a.ref, "select", { option: a.option });
+        return `selected "${v.selected}"`;
+      }
+      case "set_checked": {
+        const v = await frameDo(a.tabId, a.ref, "check", { checked: !!a.checked });
+        return `${a.ref} is now ${v.checked ? "checked" : "unchecked"}`;
+      }
+      case "scroll":
+        await frameDo(a.tabId, a.ref, "scroll");
+        return `scrolled ${a.ref} into view`;
+      case "upload_file":
+        throw new Error("File inputs inside cross-origin frames are not supported - log Needs User for the upload.");
+    }
+  }
   switch (cmd) {
     case "list_tabs": {
       const tabs = await chrome.tabs.query({});
@@ -609,11 +792,24 @@ async function handleCommand(cmd, a) {
       const t = await chrome.tabs.get(a.tabId);
       return { tabId: t.id, title: t.title, url: t.url };
     }
-    case "read_page":
-      return evalInPage(a.tabId, pageReadElements, { visibleOnly: !!a.visibleOnly, query: a.query || "" });
+    case "read_page": {
+      const opts = { visibleOnly: !!a.visibleOnly, query: a.query || "" };
+      const top = await evalInPage(a.tabId, pageReadElements, opts);
+      const frames = await frameElementLines(a.tabId, opts);
+      return frames.length ? `${top}\n${frames.join("\n")}` : top;
+    }
     case "get_text": {
       const max = a.maxChars ?? 20000;
-      return evalInPage(a.tabId, ({ max }) => (document.body?.innerText || "").slice(0, max), { max });
+      // top document + same-origin frames (e.g. iCIMS pages embedded in a company careers site)
+      let t = await evalInPage(a.tabId, () =>
+        __cbbDocs()
+          .map((d, i) => (i === 0 ? "" : `\n--- frame: ${d.location?.href} ---\n`) + (d.body?.innerText || ""))
+          .join("")
+      );
+      for (const r of await inFrames(a.tabId, frameText, {})) {
+        if (r?.result) t += `\n--- frame f${r.frameId}: ${r.result.url} ---\n${r.result.text}`;
+      }
+      return t.slice(0, max);
     }
     case "click": {
       let x = a.x, y = a.y, label = "";
@@ -661,10 +857,13 @@ async function handleCommand(cmd, a) {
         const shown = await evalInPage(a.tabId, pageComboValue, { ref: a.ref });
         return `selected "${opt.text}"${shown ? ` (field now shows: "${shown}")` : ""}`;
       }
-      await pressKey(a.tabId, "Enter");
-      await sleep(300);
-      const shown = await evalInPage(a.tabId, pageComboValue, { ref: a.ref });
-      return `no option element matched "${a.option}"; typed it and pressed Enter. Field now shows: "${shown ?? ""}" - verify.`;
+      // No Enter here: on plain forms (iCIMS etc.) Enter submits the whole page. List what is visible instead.
+      const visible = await evalInPage(a.tabId, pageVisibleOptions);
+      await pressKey(a.tabId, "Escape");
+      throw new Error(
+        `No option matching "${a.option}" (typed it to filter; nothing pressed). Visible options: ${visible.length ? visible.join(" / ") : "none found"} - ` +
+          "pick one of these, or click the field and read_page / screenshot."
+      );
     }
     case "set_checked": {
       const current = await evalInPage(a.tabId, pageReadValue, { ref: a.ref });
@@ -696,11 +895,35 @@ async function handleCommand(cmd, a) {
       return `scrolled ${dy > 0 ? "down" : "up"} ${Math.abs(dy)}px`;
     }
     case "screenshot": {
-      const shot = await cdp(a.tabId, "Page.captureScreenshot", { format: "jpeg", quality: 60 });
+      // Capture at CSS-pixel scale so screenshot pixels are the same coordinates click(x, y) uses.
+      // clip is in document coordinates: offset by the scroll position or a scrolled page comes out blank
+      const vp = await evalInPage(a.tabId, () => ({
+        x: window.scrollX, y: window.scrollY, w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio || 1
+      }));
+      const shot = await cdp(a.tabId, "Page.captureScreenshot", {
+        format: "jpeg",
+        quality: 60,
+        clip: { x: vp.x, y: vp.y, width: vp.w, height: vp.h, scale: 1 / vp.dpr }
+      });
       return { data: shot.data };
     }
-    case "password_status":
-      return evalInPage(a.tabId, pagePasswordStatus);
+    case "password_status": {
+      const s = await evalInPage(a.tabId, pagePasswordStatus);
+      // add password fields inside cross-origin frames
+      for (const r of await inFrames(a.tabId, (o) => {
+        if (window === window.top) return null;
+        try { let w = window; while (w !== w.top) { if (!w.frameElement) throw 0; w = w.parent; } return null; } catch (e) {}
+        const v = [...document.querySelectorAll("input[type=password]")].filter((el) => el.getBoundingClientRect().width > 0).map((f) => f.value);
+        return v.length ? v : null;
+      }, {})) {
+        const v = r?.result;
+        if (!v) continue;
+        s.count += v.length;
+        s.filled += v.filter((x) => x.length > 0).length;
+        s.fingerprint += (s.fingerprint ? "," : "") + v.map((x) => x.length).join(",");
+      }
+      return s;
+    }
     default:
       throw new Error(`Unknown command: ${cmd}`);
   }
