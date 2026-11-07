@@ -229,6 +229,1464 @@
     "openOnStart": true,
     "keepDays": 14
   },
+  "companyJobs": {
+    "_about": "Search company sites button on the job board: jobs straight from these companies' own career sites (large employers: Fortune 500 and other companies with 1,000+ employees) through their public job APIs - no Claude, no tokens (companyjobs.py). ats = workday (site = the careers site address), greenhouse / lever / ashby (board = the company's board name), oracle (site + siteNumber), amazon, microsoft. Add a company: copy its careers site address from a job link; python companyjobs.py --check tests every entry.",
+    "queries": [
+      "software engineer",
+      "software developer",
+      "data engineer"
+    ],
+    "titleInclude": "software|developer|programmer|full[- ]?stack|front[- ]?end|back[- ]?end|\\bweb\\b|\\bdata (?:engineer|platform)|machine learning|\\bML\\b|\\bAI\\b|artificial intelligence|devops|\\bcloud\\b|site reliability|\\bSRE\\b|SDET|\\bQA\\b|\\btest|automation|platform|application|\\bsystems? (?:engineer|developer)|mobile|\\biOS\\b|android|security engineer|infrastructure|product engineer|technical staff|backend|frontend|data scientist",
+    "titleExclude": "flight|mechanical|electrical|structures|hardware|manufacturing|\\blab\\b|rework|propulsion|avionics|\\bRF\\b|analog|circuit|thermal|civil|chemical|process engineer|field service|validation|technician|\\(contract\\)|engagement team",
+    "_roles": "The role this search looks for - change these two for another career. queries = what each company's site is searched for; titleInclude = a regex every kept title must match (big companies post every kind of job). Example for banking: queries [\"investment banking analyst\", \"financial analyst\", \"credit analyst\"], titleInclude \"banking|banker|analyst|underwriter|relationship manager\" (and widen jobFeed.titleInclude, which every source uses). python companyjobs.py --discover \"<company>\" reports how many jobs each company has for these queries.",
+    "postedWithinHours": 72,
+    "maxJobs": 25,
+    "pages": 2,
+    "companies": [
+      {
+        "name": "1Password",
+        "ats": "ashby",
+        "board": "1password",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "3M",
+        "ats": "workday",
+        "site": "https://3m.wd1.myworkdayjobs.com/Search",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Abbott",
+        "ats": "workday",
+        "site": "https://abbott.wd5.myworkdayjobs.com/AbbottCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Accenture",
+        "ats": "workday",
+        "site": "https://accenture.wd103.myworkdayjobs.com/AccentureCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Adobe",
+        "ats": "workday",
+        "site": "https://adobe.wd5.myworkdayjobs.com/external_experienced",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Aerospace Corporation",
+        "ats": "workday",
+        "site": "https://aero.wd5.myworkdayjobs.com/external",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Affirm",
+        "ats": "greenhouse",
+        "board": "affirm",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "AIG",
+        "ats": "workday",
+        "site": "https://aig.wd1.myworkdayjobs.com/aig",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Airbnb",
+        "ats": "greenhouse",
+        "board": "airbnb",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Airtable",
+        "ats": "greenhouse",
+        "board": "airtable",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "Allstate",
+        "ats": "workday",
+        "site": "https://allstate.wd5.myworkdayjobs.com/allstate_careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Alteryx",
+        "ats": "workday",
+        "site": "https://alteryx.wd108.myworkdayjobs.com/AlteryxCareers",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Amazon",
+        "ats": "amazon",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Amentum",
+        "ats": "workday",
+        "site": "https://pae.wd1.myworkdayjobs.com/amentum_careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Ameriprise Financial",
+        "ats": "workday",
+        "site": "https://ameriprise.wd5.myworkdayjobs.com/ameriprise",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Amgen",
+        "ats": "workday",
+        "site": "https://amgen.wd1.myworkdayjobs.com/careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Analog Devices",
+        "ats": "workday",
+        "site": "https://analogdevices.wd1.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Anduril",
+        "ats": "greenhouse",
+        "board": "andurilindustries",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Anthropic",
+        "ats": "greenhouse",
+        "board": "anthropic",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Appian",
+        "ats": "greenhouse",
+        "board": "appian",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Applied Materials",
+        "ats": "workday",
+        "site": "https://amat.wd1.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Asana",
+        "ats": "greenhouse",
+        "board": "asana",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "AT&T",
+        "ats": "workday",
+        "site": "https://att.wd1.myworkdayjobs.com/ATTGeneral",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Axon",
+        "ats": "greenhouse",
+        "board": "axon",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Bandwidth",
+        "ats": "greenhouse",
+        "board": "bandwidth",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Bank of America",
+        "ats": "workday",
+        "site": "https://ghr.wd1.myworkdayjobs.com/Lateral-US",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Benchling",
+        "ats": "ashby",
+        "board": "benchling",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "Bitwarden",
+        "ats": "greenhouse",
+        "board": "bitwarden",
+        "employees": "201-500"
+      },
+      {
+        "name": "Blackbaud",
+        "ats": "workday",
+        "site": "https://blackbaud.wd1.myworkdayjobs.com/ExternalCareers",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Block",
+        "ats": "greenhouse",
+        "board": "block",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Blue Origin",
+        "ats": "workday",
+        "site": "https://blueorigin.wd5.myworkdayjobs.com/blueorigin",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Boeing",
+        "ats": "workday",
+        "site": "https://boeing.wd1.myworkdayjobs.com/EXTERNAL_CAREERS",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Booz Allen",
+        "ats": "workday",
+        "site": "https://bah.wd1.myworkdayjobs.com/BAH_Jobs",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Box",
+        "ats": "greenhouse",
+        "board": "boxinc",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Brex",
+        "ats": "greenhouse",
+        "board": "brex",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Broadcom",
+        "ats": "workday",
+        "site": "https://broadcom.wd1.myworkdayjobs.com/External_Career",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Broadridge",
+        "ats": "workday",
+        "site": "https://broadridge.wd5.myworkdayjobs.com/Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Bungie",
+        "ats": "greenhouse",
+        "board": "bungie",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "CACI",
+        "ats": "workday",
+        "site": "https://caci.wd1.myworkdayjobs.com/external",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Cadence Design Systems",
+        "ats": "workday",
+        "site": "https://cadence.wd1.myworkdayjobs.com/External_Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Calm",
+        "ats": "greenhouse",
+        "board": "calm",
+        "employees": "201-500"
+      },
+      {
+        "name": "Capital Group",
+        "ats": "workday",
+        "site": "https://capgroup.wd1.myworkdayjobs.com/capitalgroupcareers",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Capital One",
+        "ats": "workday",
+        "site": "https://capitalone.wd12.myworkdayjobs.com/Capital_One",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Cardinal Health",
+        "ats": "workday",
+        "site": "https://cardinalhealth.wd1.myworkdayjobs.com/Ext",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Carrier",
+        "ats": "workday",
+        "site": "https://carrier.wd5.myworkdayjobs.com/jobs",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Carta",
+        "ats": "greenhouse",
+        "board": "carta",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Carvana",
+        "ats": "greenhouse",
+        "board": "carvana",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Caterpillar",
+        "ats": "workday",
+        "site": "https://cat.wd5.myworkdayjobs.com/CaterpillarCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "CDW",
+        "ats": "workday",
+        "site": "https://cdw.wd5.myworkdayjobs.com/Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Chevron",
+        "ats": "workday",
+        "site": "https://chevron.wd5.myworkdayjobs.com/jobs",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Chewy",
+        "ats": "workday",
+        "site": "https://chewy.wd5.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Chime",
+        "ats": "greenhouse",
+        "board": "chime",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Chipotle",
+        "ats": "workday",
+        "site": "https://chipotle.wd5.myworkdayjobs.com/ChipotleCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Ciena",
+        "ats": "workday",
+        "site": "https://ciena.wd5.myworkdayjobs.com/Careers",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Cisco",
+        "ats": "workday",
+        "site": "https://cisco.wd5.myworkdayjobs.com/Cisco_Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Cloudflare",
+        "ats": "greenhouse",
+        "board": "cloudflare",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Cohere",
+        "ats": "ashby",
+        "board": "cohere",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "Coinbase",
+        "ats": "greenhouse",
+        "board": "coinbase",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Compass",
+        "ats": "greenhouse",
+        "board": "urbancompass",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "ConocoPhillips",
+        "ats": "workday",
+        "site": "https://conocophillips.wd1.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Coursera",
+        "ats": "greenhouse",
+        "board": "coursera",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "CrowdStrike",
+        "ats": "workday",
+        "site": "https://crowdstrike.wd5.myworkdayjobs.com/CrowdstrikeCareers",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "CVS Health",
+        "ats": "workday",
+        "site": "https://cvshealth.wd1.myworkdayjobs.com/CVS_Health_Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Databricks",
+        "ats": "greenhouse",
+        "board": "databricks",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Datadog",
+        "ats": "greenhouse",
+        "board": "datadog",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Discord",
+        "ats": "greenhouse",
+        "board": "discord",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "Disney",
+        "ats": "workday",
+        "site": "https://disney.wd5.myworkdayjobs.com/disneycareer",
+        "employees": "10,001+"
+      },
+      {
+        "name": "DoorDash",
+        "ats": "greenhouse",
+        "board": "doordashusa",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Dropbox",
+        "ats": "greenhouse",
+        "board": "dropbox",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Duke Energy",
+        "ats": "workday",
+        "site": "https://dukeenergy.wd1.myworkdayjobs.com/Search",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Duolingo",
+        "ats": "greenhouse",
+        "board": "duolingo",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "eBay",
+        "ats": "workday",
+        "site": "https://ebay.wd5.myworkdayjobs.com/apply",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Elastic",
+        "ats": "greenhouse",
+        "board": "elastic",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Elevance Health",
+        "ats": "workday",
+        "site": "https://elevancehealth.wd1.myworkdayjobs.com/ANT",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Epic Games",
+        "ats": "greenhouse",
+        "board": "epicgames",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Equifax",
+        "ats": "workday",
+        "site": "https://equifax.wd5.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Equinix",
+        "ats": "workday",
+        "site": "https://equinix.wd1.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Expedia",
+        "ats": "workday",
+        "site": "https://expedia.wd108.myworkdayjobs.com/search",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Fannie Mae",
+        "ats": "workday",
+        "site": "https://fanniemae.wd1.myworkdayjobs.com/FannieMaeCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Fastly",
+        "ats": "greenhouse",
+        "board": "fastly",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Fidelity",
+        "ats": "workday",
+        "site": "https://fmr.wd1.myworkdayjobs.com/FidelityCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Figma",
+        "ats": "greenhouse",
+        "board": "figma",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Five9",
+        "ats": "greenhouse",
+        "board": "five9",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Flatiron Health",
+        "ats": "greenhouse",
+        "board": "flatironhealth",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Flexport",
+        "ats": "greenhouse",
+        "board": "flexport",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Fox",
+        "ats": "workday",
+        "site": "https://fox.wd1.myworkdayjobs.com/Domestic",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Freddie Mac",
+        "ats": "workday",
+        "site": "https://freddiemac.wd5.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Gap",
+        "ats": "workday",
+        "site": "https://gapinc.wd1.myworkdayjobs.com/gapinc",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Gartner",
+        "ats": "workday",
+        "site": "https://gartner.wd5.myworkdayjobs.com/Ext",
+        "employees": "10,001+"
+      },
+      {
+        "name": "GDIT",
+        "ats": "workday",
+        "site": "https://gdit.wd5.myworkdayjobs.com/External_Career_Site",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Gen Digital",
+        "ats": "ashby",
+        "board": "gen-digital",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "General Motors",
+        "ats": "workday",
+        "site": "https://generalmotors.wd5.myworkdayjobs.com/Careers_GM",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Genpact",
+        "ats": "workday",
+        "site": "https://genpact.wd108.myworkdayjobs.com/External_Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "GitLab",
+        "ats": "greenhouse",
+        "board": "gitlab",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "GlobalFoundries",
+        "ats": "workday",
+        "site": "https://globalfoundries.wd1.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "GoDaddy",
+        "ats": "greenhouse",
+        "board": "godaddy",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Gopuff",
+        "ats": "lever",
+        "board": "gopuff",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Guidehouse",
+        "ats": "workday",
+        "site": "https://guidehouse.wd1.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Guidewire",
+        "ats": "workday",
+        "site": "https://guidewire.wd5.myworkdayjobs.com/External",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Guild",
+        "ats": "greenhouse",
+        "board": "guild",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Gusto",
+        "ats": "greenhouse",
+        "board": "gusto",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Hasbro",
+        "ats": "greenhouse",
+        "board": "hasbro",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Hewlett Packard Enterprise",
+        "ats": "workday",
+        "site": "https://hpe.wd5.myworkdayjobs.com/jobsathpe",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Hims & Hers",
+        "ats": "ashby",
+        "board": "hims-and-hers",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Home Depot",
+        "ats": "workday",
+        "site": "https://homedepot.wd5.myworkdayjobs.com/careerdepot",
+        "employees": "10,001+"
+      },
+      {
+        "name": "HP",
+        "ats": "workday",
+        "site": "https://hp.wd5.myworkdayjobs.com/ExternalCareerSite",
+        "employees": "10,001+"
+      },
+      {
+        "name": "HubSpot",
+        "ats": "greenhouse",
+        "board": "hubspotjobs",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Humana",
+        "ats": "workday",
+        "site": "https://humana.wd5.myworkdayjobs.com/Humana_External_Career_Site",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Ibotta",
+        "ats": "ashby",
+        "board": "ibotta",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "ICF",
+        "ats": "workday",
+        "site": "https://icf.wd5.myworkdayjobs.com/icfexternal_career_site",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Instacart",
+        "ats": "greenhouse",
+        "board": "instacart",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Intapp",
+        "ats": "workday",
+        "site": "https://intapp.wd1.myworkdayjobs.com/intapp",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Intel",
+        "ats": "workday",
+        "site": "https://intel.wd1.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Johnson & Johnson",
+        "ats": "workday",
+        "site": "https://jj.wd5.myworkdayjobs.com/JJ",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Johnson Controls",
+        "ats": "workday",
+        "site": "https://jci.wd5.myworkdayjobs.com/jci",
+        "employees": "10,001+"
+      },
+      {
+        "name": "JPMorgan Chase",
+        "ats": "oracle",
+        "site": "https://jpmc.fa.oraclecloud.com",
+        "siteNumber": "CX_1001",
+        "employees": "10,001+"
+      },
+      {
+        "name": "KBR",
+        "ats": "workday",
+        "site": "https://kbr.wd5.myworkdayjobs.com/kbr_careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "KeyCorp",
+        "ats": "workday",
+        "site": "https://keybank.wd5.myworkdayjobs.com/External_Career_Site",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Kimberly-Clark",
+        "ats": "workday",
+        "site": "https://kimberlyclark.wd1.myworkdayjobs.com/Global",
+        "employees": "10,001+"
+      },
+      {
+        "name": "KLA",
+        "ats": "workday",
+        "site": "https://kla.wd1.myworkdayjobs.com/Search",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Klaviyo",
+        "ats": "greenhouse",
+        "board": "klaviyo",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Leidos",
+        "ats": "workday",
+        "site": "https://leidos.wd5.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Lowe's",
+        "ats": "workday",
+        "site": "https://lowes.wd5.myworkdayjobs.com/LWS_External_CS",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Lucid Motors",
+        "ats": "greenhouse",
+        "board": "lucidmotors",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Lyft",
+        "ats": "greenhouse",
+        "board": "lyft",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Marvell Technology",
+        "ats": "workday",
+        "site": "https://marvell.wd1.myworkdayjobs.com/MarvellCareers",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Mastercard",
+        "ats": "workday",
+        "site": "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "McKesson",
+        "ats": "workday",
+        "site": "https://mckesson.wd3.myworkdayjobs.com/External_Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Medtronic",
+        "ats": "workday",
+        "site": "https://medtronic.wd1.myworkdayjobs.com/MedtronicCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Micron",
+        "ats": "workday",
+        "site": "https://micron.wd1.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Microsoft",
+        "ats": "microsoft",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Miro",
+        "ats": "ashby",
+        "board": "miro",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "MongoDB",
+        "ats": "greenhouse",
+        "board": "mongodb",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Morgan Stanley",
+        "ats": "workday",
+        "site": "https://ms.wd5.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Motorola Solutions",
+        "ats": "workday",
+        "site": "https://motorolasolutions.wd5.myworkdayjobs.com/Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Nasdaq",
+        "ats": "greenhouse",
+        "board": "nasdaq",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Nerdwallet",
+        "ats": "ashby",
+        "board": "nerdwallet",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "New Relic",
+        "ats": "greenhouse",
+        "board": "newrelic",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Nextdoor",
+        "ats": "greenhouse",
+        "board": "nextdoor",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "Nike",
+        "ats": "workday",
+        "site": "https://nike.wd1.myworkdayjobs.com/nke",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Nordstrom",
+        "ats": "workday",
+        "site": "https://nordstrom.wd501.myworkdayjobs.com/nordstrom_careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Northrop Grumman",
+        "ats": "workday",
+        "site": "https://ngc.wd1.myworkdayjobs.com/Northrop_Grumman_External_Site",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Northwestern Mutual",
+        "ats": "workday",
+        "site": "https://northwesternmutual.wd5.myworkdayjobs.com/CORPORATE-CAREERS",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Notion",
+        "ats": "ashby",
+        "board": "notion",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "Nuro",
+        "ats": "greenhouse",
+        "board": "nuro",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "NVIDIA",
+        "ats": "workday",
+        "site": "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite",
+        "employees": "10,001+"
+      },
+      {
+        "name": "OfferUp",
+        "ats": "greenhouse",
+        "board": "offerup",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "Okta",
+        "ats": "greenhouse",
+        "board": "okta",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "OpenAI",
+        "ats": "ashby",
+        "board": "openai",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Oscar Health",
+        "ats": "greenhouse",
+        "board": "oscar",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "PagerDuty",
+        "ats": "greenhouse",
+        "board": "pagerduty",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Palantir",
+        "ats": "lever",
+        "board": "palantir",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Parsons",
+        "ats": "workday",
+        "site": "https://parsons.wd5.myworkdayjobs.com/Search",
+        "employees": "10,001+"
+      },
+      {
+        "name": "PayPal",
+        "ats": "workday",
+        "site": "https://paypal.wd1.myworkdayjobs.com/jobs",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Peloton",
+        "ats": "greenhouse",
+        "board": "peloton",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Perplexity",
+        "ats": "ashby",
+        "board": "perplexity",
+        "employees": "201-500"
+      },
+      {
+        "name": "Pfizer",
+        "ats": "workday",
+        "site": "https://pfizer.wd1.myworkdayjobs.com/PfizerCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Ping Identity",
+        "ats": "greenhouse",
+        "board": "pingidentity",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Pinterest",
+        "ats": "greenhouse",
+        "board": "pinterest",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Plaid",
+        "ats": "ashby",
+        "board": "plaid",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "PNC",
+        "ats": "workday",
+        "site": "https://pnc.wd5.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Prudential",
+        "ats": "workday",
+        "site": "https://prudential.wd3.myworkdayjobs.com/prudential",
+        "employees": "10,001+"
+      },
+      {
+        "name": "PwC",
+        "ats": "workday",
+        "site": "https://pwc.wd3.myworkdayjobs.com/US_Experienced_Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Qualtrics",
+        "ats": "greenhouse",
+        "board": "qualtrics",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Raymond James",
+        "ats": "workday",
+        "site": "https://raymondjames.wd1.myworkdayjobs.com/RaymondjamesCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Red Hat",
+        "ats": "workday",
+        "site": "https://redhat.wd5.myworkdayjobs.com/jobs",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Reddit",
+        "ats": "greenhouse",
+        "board": "reddit",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Regeneron",
+        "ats": "workday",
+        "site": "https://regeneron.wd1.myworkdayjobs.com/Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Relativity Space",
+        "ats": "greenhouse",
+        "board": "relativity",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Remitly",
+        "ats": "workday",
+        "site": "https://remitly.wd5.myworkdayjobs.com/remitly_careers",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Republic Services",
+        "ats": "workday",
+        "site": "https://republic.wd5.myworkdayjobs.com/republic",
+        "employees": "10,001+"
+      },
+      {
+        "name": "RingCentral",
+        "ats": "workday",
+        "site": "https://ringcentral.wd1.myworkdayjobs.com/ringcentral_careers",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Riot Games",
+        "ats": "greenhouse",
+        "board": "riotgames",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Robinhood",
+        "ats": "greenhouse",
+        "board": "robinhood",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Roblox",
+        "ats": "greenhouse",
+        "board": "roblox",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Rocket Lab",
+        "ats": "greenhouse",
+        "board": "rocketlab",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Roku",
+        "ats": "greenhouse",
+        "board": "roku",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Rover",
+        "ats": "lever",
+        "board": "rover",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "RTX",
+        "ats": "workday",
+        "site": "https://globalhr.wd5.myworkdayjobs.com/REC_RTX_Ext_Gateway",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Rubrik",
+        "ats": "greenhouse",
+        "board": "rubrik",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "S&P Global",
+        "ats": "workday",
+        "site": "https://spgi.wd5.myworkdayjobs.com/SPGI_Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Salesforce",
+        "ats": "workday",
+        "site": "https://salesforce.wd12.myworkdayjobs.com/External_Career_Site",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Samsara",
+        "ats": "greenhouse",
+        "board": "samsara",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Scale AI",
+        "ats": "greenhouse",
+        "board": "scaleai",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Scopely",
+        "ats": "greenhouse",
+        "board": "scopely",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "SeatGeek",
+        "ats": "greenhouse",
+        "board": "seatgeek",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "Shield AI",
+        "ats": "lever",
+        "board": "shieldai",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Skydio",
+        "ats": "ashby",
+        "board": "skydio",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "Smartsheet",
+        "ats": "greenhouse",
+        "board": "smartsheet",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Snowflake",
+        "ats": "ashby",
+        "board": "snowflake",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "SoFi",
+        "ats": "greenhouse",
+        "board": "sofi",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Sonos",
+        "ats": "workday",
+        "site": "https://sonos.wd1.myworkdayjobs.com/sonos",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Southwest Airlines",
+        "ats": "workday",
+        "site": "https://swa.wd1.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "SpaceX",
+        "ats": "greenhouse",
+        "board": "spacex",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Spotify",
+        "ats": "lever",
+        "board": "spotify",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Squarespace",
+        "ats": "greenhouse",
+        "board": "squarespace",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "State Street",
+        "ats": "workday",
+        "site": "https://statestreet.wd1.myworkdayjobs.com/Global",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Stripe",
+        "ats": "greenhouse",
+        "board": "stripe",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Stryker",
+        "ats": "workday",
+        "site": "https://stryker.wd1.myworkdayjobs.com/strykercareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Synchrony",
+        "ats": "workday",
+        "site": "https://synchronyfinancial.wd5.myworkdayjobs.com/careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Sysco",
+        "ats": "workday",
+        "site": "https://sysco.wd5.myworkdayjobs.com/SyscoCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "T-Mobile",
+        "ats": "workday",
+        "site": "https://tmobile.wd1.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Take-Two Interactive",
+        "ats": "greenhouse",
+        "board": "taketwo",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Target",
+        "ats": "workday",
+        "site": "https://target.wd5.myworkdayjobs.com/targetcareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Tempus",
+        "ats": "workday",
+        "site": "https://tempus.wd5.myworkdayjobs.com/tempus_careers",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Thermo Fisher",
+        "ats": "workday",
+        "site": "https://thermofisher.wd5.myworkdayjobs.com/ThermoFisherCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "TJX",
+        "ats": "workday",
+        "site": "https://tjx.wd1.myworkdayjobs.com/Tjx_External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Toast",
+        "ats": "greenhouse",
+        "board": "toast",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "TransUnion",
+        "ats": "workday",
+        "site": "https://transunion.wd5.myworkdayjobs.com/transunion",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Travelers",
+        "ats": "workday",
+        "site": "https://travelers.wd5.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Trimble",
+        "ats": "workday",
+        "site": "https://trimble.wd1.myworkdayjobs.com/TrimbleCareers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Tripadvisor",
+        "ats": "greenhouse",
+        "board": "tripadvisor",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Truist",
+        "ats": "workday",
+        "site": "https://truist.wd1.myworkdayjobs.com/Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Twilio",
+        "ats": "greenhouse",
+        "board": "twilio",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Twitch",
+        "ats": "greenhouse",
+        "board": "twitch",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Unisys",
+        "ats": "workday",
+        "site": "https://unisys.wd5.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Upwork",
+        "ats": "greenhouse",
+        "board": "upwork",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "US Bank",
+        "ats": "workday",
+        "site": "https://usbank.wd1.myworkdayjobs.com/US_Bank_Careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Vanguard",
+        "ats": "workday",
+        "site": "https://vanguard.wd5.myworkdayjobs.com/Vanguard_External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Veeva Systems",
+        "ats": "lever",
+        "board": "veeva",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Vercel",
+        "ats": "greenhouse",
+        "board": "vercel",
+        "employees": "501-1,000"
+      },
+      {
+        "name": "Verizon",
+        "ats": "workday",
+        "site": "https://verizon.wd12.myworkdayjobs.com/verizon-careers",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Verkada",
+        "ats": "greenhouse",
+        "board": "verkada",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Visa",
+        "ats": "workday",
+        "site": "https://visa.wd5.myworkdayjobs.com/Visa",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Walmart",
+        "ats": "workday",
+        "site": "https://walmart.wd504.myworkdayjobs.com/WalmartExternal",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Warner Bros. Discovery",
+        "ats": "workday",
+        "site": "https://warnerbros.wd5.myworkdayjobs.com/Global",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Waymo",
+        "ats": "greenhouse",
+        "board": "waymo",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Workday",
+        "ats": "workday",
+        "site": "https://workday.wd5.myworkdayjobs.com/Workday",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Workiva",
+        "ats": "workday",
+        "site": "https://workiva.wd503.myworkdayjobs.com/Careers",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "xAI",
+        "ats": "greenhouse",
+        "board": "xai",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Xcel Energy",
+        "ats": "workday",
+        "site": "https://xcelenergy.wd1.myworkdayjobs.com/External",
+        "employees": "10,001+"
+      },
+      {
+        "name": "Yext",
+        "ats": "greenhouse",
+        "board": "yext",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Zebra Technologies",
+        "ats": "workday",
+        "site": "https://zebra.wd501.myworkdayjobs.com/zebra_careers",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Zendesk",
+        "ats": "workday",
+        "site": "https://zendesk.wd1.myworkdayjobs.com/zendesk",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Zipline",
+        "ats": "greenhouse",
+        "board": "flyzipline",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "ZipRecruiter",
+        "ats": "greenhouse",
+        "board": "ziprecruiter",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Zoom",
+        "ats": "workday",
+        "site": "https://zoom.wd5.myworkdayjobs.com/zoom",
+        "employees": "5,001-10,000"
+      },
+      {
+        "name": "Zoominfo",
+        "ats": "greenhouse",
+        "board": "zoominfo",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Zoox",
+        "ats": "lever",
+        "board": "zoox",
+        "employees": "1,001-5,000"
+      },
+      {
+        "name": "Zscaler",
+        "ats": "greenhouse",
+        "board": "zscaler",
+        "employees": "5,001-10,000"
+      }
+    ],
+    "minEmployees": 1000,
+    "_minEmployees": "Only companies with at least this many employees are searched (each entry's employees = an approximate size bucket; correct it if you know better). 0 = every company in the list.",
+    "_discover": "Grow the list: python companyjobs.py --discover \"Company A\" \"Company B\" [--employees 10,001+] [--write] finds each company's Greenhouse / Lever / Ashby / Workday board and tests it (no tokens); --discover-file names.txt for a list (Name | board/tenant names | employees); --add <job link> --name \"Company\" adds one from any of its job links (Workday, Greenhouse, Lever, Ashby, Oracle). Without --write it only previews."
+  },
   "loop": {
     "intervalHours": 2,
     "candidateCapPerRound": 5,
@@ -240,7 +1698,12 @@
     "browserTool": "browser-bridge",
     "startChrome": true,
     "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "claudePermissionMode": "auto"
+    "claudePermissionMode": "auto",
+    "chromeProfileDir": "private\\chrome-job-profile"
+  },
+  "apply": {
+    "autoSubmit": false,
+    "_autoSubmit": "true = Claude clicks the final Submit button of each queued application; false = Claude fills everything, stops at Submit and leaves the tab open for you (logged Needs User, READY TO SUBMIT)"
   },
   "profile": {
     "_about": "Your own preference notes. Where these conflict with the search fields above (roles, experienceYears, postedWithinHours, locations, skip, sources, loop) or with autoApplyLoop, those win.",
@@ -277,7 +1740,7 @@
       "2s. THE USER APPROVES THE JOBS: the job board page (http://127.0.0.1:<jobBoard.port>, opened by StartJobSearch.exe or `python jobboard.py`) lists the candidates; the user approves a job by putting it in the apply queue (in order) or skips it. Claude applies ONLY to queued jobs, with a QUEUE RUN (step 2q), started by the watcher (python jobboard.py watch, within seconds of an Add to apply queue click) or right away when the user says \"apply my selected jobs\". Never apply to, or log, jobs the user has not queued or has skipped.",
       "2g. BROWSER SEARCH: the job board's \"Search Google Jobs\" / \"Search LinkedIn\" buttons save a search request; the watcher prints \"search request <id>: google|linkedin\". Then: (1) EVERY SEARCH COVERS ALL PREFERRED LOCATIONS: run the query once per entry in locations (each area, plus Remote US with the Remote filter) - never just one area. Pick the role searched least recently (`python jobboard.py searches --all` shows earlier requests and their notes) and run `python jobboard.py search <id> running --note \"<query> in all locations\"`. (1b) BUSIEST LOCATIONS FIRST: search the locations in the order of browserSearch.locationActivity (most entry-level openings first), and after the search update each location's counts there (date, entry-level results seen, candidates added) and re-sort so the busiest location is first. (2) Open a NEW Chrome tab (open_tab). Google Jobs: https://www.google.com/search?q=<query>+jobs+<area>&udm=8 (Google's Jobs tab), once per area, then the \"Date posted\" filter set to the last 24 hours (Past 24 hours / Yesterday). LinkedIn: the step 2b search URL sorted newest (sortBy=DD, f_TPR=r86400 = last 24 h per browserSearch.postedWithinHours, f_E=2,3, geoId / linkedinKeyword, f_WT=2 for Remote US), one results page, pace per loop.linkedinSearchDelayMinutes, stop on HTTP 429. (3) Read the results and open each promising post; keep up to browserSearch.candidatesPerSearch candidates that pass: title fits roles / seniority, experienceYears, skip.rules (active clearance, CBP, staffing agencies incl. jobFeed.staffingAgencies, LinkedIn Easy Apply only when the company's own posting cannot be found - look for it first per step 2c, skip companies, 2027-grad-only, Amazon SDE), salaryExpectation (drop jobs whose listed pay tops out below the expectation for their area; no salary listed = keep) and `python applog.py check` (already logged -> drop). LAST 24 HOURS ONLY, NO FILLING TO 10: look only at jobs posted in the last browserSearch.postedWithinHours (24) hours, newest first, in one pass over every location. candidatesPerSearch (10) is a cap, not a target: add whatever passes and stop - do NOT widen the time window, try related roles / synonyms, or go to career sites just to reach 10 (browserSearch.widenToFill = false). If nothing passes, say so in the search note. NO POST DATE: a posting that shows no posted date is NOT dropped for that - keep it as a candidate (and apply to it once queued) as long as it passes every other rule; note 'post date not given' in its description. For each, find the company's own posting / apply page (\"Apply on company site\", career site, ATS) as applyUrl. (4) Write them to a JSON file in the session scratchpad: [{source: \"google\"|\"linkedin\", id: <LinkedIn job id or a short unique id>, company, title, location, workMode: \"Remote\"|\"Hybrid\"|\"On-site\", salary (as posted, e.g. \"$90,000 - $120,000\" or \"$40 - $55 /hr\"), posted (ISO date-time), url (the post), applyUrl, description (COPY THE POSTING'S QUALIFICATIONS WORD FOR WORD, not a summary: 'Required: <every required / minimum / basic qualification line>' then 'Preferred: <every preferred / desired / nice-to-have line>', then a short summary of the role - the job board's keyword match score and years filter read only this text), companySize (employee range like \"1,001-5,000\", ONLY when a page already opened shows it, e.g. LinkedIn \"1,001-5,000 employees\" - never an extra lookup or search; omit if not shown)}] and run `python jobboard.py add <file> --search <id>` (marks the request done). Do NOT log them in applications.json - the user approves them on the board. (5) Close the search tab and list the candidates in chat: company, title, location, work mode, pay, years required, link - the user approves with Add to apply queue on the board, which starts a queue run (step 2q). (6) Blocked (CAPTCHA, sign-in, 429, no results): `python jobboard.py search <id> failed --note \"<reason>\"` and tell the user.",
       "2u. UPDATE MY ANSWERS: the job board's \"Update my answers\" button lets the user upload a resume (saved in ..\\private\\uploads\\) and then fill in a list of every application question (answerbank.py: the APPLICANT_* contact values, the ANSWER_* bank and common questions not in the bank yet; secrets are never shown). After an upload the watcher prints \"profile request <id>: new resume <path>\". Then: (1) `python jobboard.py profile running`. (2) Read the uploaded resume. (3) Update ..\\private\\resume.json to match it and make it the resume to upload (copy it to the resume path in step 4, or update that path, and ANSWER_RESUME_CURRENT_RESUME). (4) Fill every answer the resume gives - contact values, name, degree / school / graduation / GPA, current and previous job, total and per-skill years, skills, certifications, spoken languages - with `python answerbank.py set KEY \"value\"` (`python answerbank.py missing` lists the open questions); keep the user's existing answers unless the resume shows they changed. (5) `python jobboard.py profile done --note \"<n> answers filled from the resume\"` (or `failed --note <reason>`) - the page then shows the remaining questions to the user. Questions still blank are asked during applications and saved then (step 6d).",
-      "2q. QUEUE RUN: work through `python jobboard.py queue` top to bottom, one job at a time, in the browser named in launcher.browserTool (the browser-bridge tools in Google Chrome). For each job: (1) `python jobboard.py applying <key>` (the page shows \"Applying now\"). (2) Open its apply link in a NEW tab (open_tab) - never reuse the tab of a blocked job. (3) Verify the posting per step 3; if it fails a rule, do not apply: log it as Needs approval with the reason, close the tab, next job. Jobs the queue lists as APPROVED BY THE USER (the board's Approve & apply button, applications.json status Approved) skip this check for the rule they failed - apply anyway. Jobs the queue lists as CONTINUE (the user clicked Continue application on a Needs User job - it goes back to the END of the queue) are finished where they stopped: reuse the tab left open if it is still there (else open the logged link), the user may have done the blocked step (sign-in, email code, CAPTCHA) - check the page and carry on. (4) Fill the application manually like a person - text fields, dropdowns, checkboxes, radio buttons, resume upload - with the ANSWER_* / APPLICANT_* values from ..\\private\\.env and the resume per steps 4 / 4a. (5) Account / sign-in pages per step 6b: sign in, or create the account, with APPLICANT_EMAIL + APPLICANT_PASSWORD (typed into the password fields only, never shown anywhere); if that password is empty or rejected, use the wait_for_password hand-off; then continue the same application. (6) Submitted: `python applog.py add --status Submitted --id <job id> --url <link> ...`, then close the tab. (7) Blocked - password hand-off timed out, CAPTCHA, email verification code, site not allowed, a question the answer bank doesn't cover: leave that tab OPEN, `python applog.py add --status \"Needs User\" --id <job id> --url <link> --notes \"<reason>; tab left open\"` (it shows under \"Waiting on you\" on the board), then go straight to the next job in a new tab - never stop or wait on the whole queue for one blocked job. (8) Browser bridge errors: the bridge already retries each action 3 times; after that, re-read the page and try the step once more, then log the job as Needs User with the error and continue. If the extension is not connected at all, stop the queue run, tell the user once (check the extension badge) and leave the rest of the queue for the next run. End of the queue: a short summary - submitted, needs user (with the tabs left open), needs approval - and python applog.py note \"queue run: <n> submitted, <n> needs user, <n> needs approval\".",
+      "2q. QUEUE RUN: work through `python jobboard.py queue` top to bottom, one job at a time, in the browser named in launcher.browserTool (the browser-bridge tools in Google Chrome - in the job-only Chrome profile launcher.chromeProfileDir when it is set: its own job-site logins, none of the user's personal accounts). For each job: (1) `python jobboard.py applying <key>` (the page shows \"Applying now\"). (2) Open its apply link in a NEW tab (open_tab) - never reuse the tab of a blocked job. (3) Verify the posting per step 3; if it fails a rule, do not apply: log it as Needs approval with the reason, close the tab, next job. Jobs the queue lists as APPROVED BY THE USER (the board's Approve & apply button, applications.json status Approved) skip this check for the rule they failed - apply anyway. Jobs the queue lists as CONTINUE (the user clicked Continue application on a Needs User job - it goes back to the END of the queue) are finished where they stopped: reuse the tab left open if it is still there (else open the logged link), the user may have done the blocked step (sign-in, email code, CAPTCHA) - check the page and carry on. (4) Fill the application manually like a person - text fields, dropdowns, checkboxes, radio buttons, resume upload - with the ANSWER_* / APPLICANT_* values from ..\\private\\.env and the resume per steps 4 / 4a. (5) Account / sign-in pages per step 6b: sign in, or create the account, with APPLICANT_EMAIL + APPLICANT_PASSWORD (typed into the password fields only, never shown anywhere); if that password is empty or rejected, use the wait_for_password hand-off; then continue the same application. (6) The final Submit / Send / Apply button, per apply.autoSubmit: true -> click it, then `python applog.py add --status Submitted --id <job id> --url <link> ...` and close the tab; false -> fill every page up to that last button but do NOT click it: leave the tab open, `python applog.py add --status \"Needs User\" --id <job id> --url <link> --notes \"READY TO SUBMIT: every field filled - review and click Submit in the open tab, then Mark as submitted on the board\"`, and go on to the next job (a CONTINUE of such a job: if the page shows it was submitted, log Submitted; otherwise leave it for the user). (7) Blocked - password hand-off timed out, CAPTCHA, email verification code, site not allowed, a question the answer bank doesn't cover: leave that tab OPEN, `python applog.py add --status \"Needs User\" --id <job id> --url <link> --notes \"<reason>; tab left open\"` (it shows under \"Waiting on you\" on the board), then go straight to the next job in a new tab - never stop or wait on the whole queue for one blocked job. (8) Browser bridge errors: the bridge already retries each action 3 times; after that, re-read the page and try the step once more, then log the job as Needs User with the error and continue. If the extension is not connected at all, stop the queue run, tell the user once (check the extension badge) and leave the rest of the queue for the next run. End of the queue: a short summary - submitted, needs user (with the tabs left open), needs approval - and python applog.py note \"queue run: <n> submitted, <n> needs user, <n> needs approval\".",
       "2a. FINISH THE QUEUE: a queue run handles EVERY job in `python jobboard.py queue` - each one Submitted, Needs approval, Needs User or Skipped with the reason in applications.json - before it ends.",
       "2a2. CANDIDATE CAP + TIME LIMIT: once loop.candidateCapPerRound qualified candidates are found, stop searching and apply to those first. If finding candidates takes too long (more than ~30 minutes or 3 searches with nothing new), stop searching, apply to what was found, and wait for the next round. [superseded: no apply rounds any more - jobs are fetched by the job board, Claude applies only from the apply queue]",
       "2b. LINKEDIN SEARCH: done through the board's Search LinkedIn button (step 2g) or when the user asks in chat - same steps. Search URL: LinkedIn job search (signed in), jobs posted in the last postedWithinHours hours (judge by the card text \"Posted X minutes / hours ago\"; use f_TPR=r86400 and read the card), experience level Entry level / Associate (f_E=2,3), ONE results page at a time with loop.linkedinSearchDelayMinutes between searches, areas = the locations list (linkedinGeoId / linkedinKeyword) plus Remote US (f_WT=2), roles = the roles list. On HTTP 429: stop. A queue run then opens the post, uses \"Apply on company website\" (never Easy Apply) and applies there.",
@@ -294,6 +1757,7 @@
       "6b. LOGIN PAGES / NEW ACCOUNTS: use ${APPLICANT_EMAIL} and the password in ${APPLICANT_PASSWORD} (..\\private\\.env) to sign in, or to CREATE an account when the site has none for that email (Create account / Register: email, password + confirm, name, privacy/accept checkboxes). Type the password straight into the password fields only - never print it in chat, logs, notes, applications.json or any other file. Retry each step up to 3 times. If APPLICANT_PASSWORD is empty, or the site rejects it (password rules, existing account with another password), fall back to the wait_for_password hand-off (the user fills it with Chrome's password manager). Email verification codes / CAPTCHAs still need the user: leave the tab open, log it as Needs User, and continue with the next job. List all waiting tabs in the queue run summary. When sign-in fails (account unverified, password rejected, sign-in does nothing), always try Create Account next with the same email and password before resending a verification email; only if account creation is refused fall back to Forgot password / verification email and log Needs User. TYPE_SECRET: type the password with the browser bridge tool type_secret (name APPLICANT_PASSWORD, ref = the password field) - the bridge reads it from private/.env and types it, Claude never reads or sees the value (reading it via Bash is blocked by the permission check). Use it for every password + confirm field; wait_for_password only if type_secret fails or the site rejects the password.",
       "6c. SITE NOT ALLOWED: if the browser bridge says \"Site not allowed: <domain>\", do not stop or wait - log the job as \"Needs User\" with note \"site not allowed: <domain>\" + the URL, leave the tab open, and continue with the next job. Mention blocked domains in the queue run summary.",
       "6d. SAVE EVERY NEW ANSWER: when a form asks a question the ANSWER_* bank does not cover and the user answers it, immediately run: python applog.py answer --section <matching '# --- section ---' in ..\\private\\.env> --question \"<the question>\" --answer \"<the answer>\" - it adds / updates the entry in ..\\private\\.env (and the empty key in ..\\examples\\.env.example). Reuse that answer on later forms without asking again.",
+      "6e. VERIFICATION EMAILS / CODES ARE NOT A BLOCK: when a site sends a verification email (\"verify your account\", Workday after Create Account, Greenhouse / Oracle email codes), note the time, start `python mailcheck.py wait --match <company>,<site e.g. myworkday / greenhouse / oracle> --since <that time> --every 120 --timeout 1200` IN THE BACKGROUND (Bash run_in_background - it checks the job-application inbox every 2 minutes, read-only) and go on with the next queued job meanwhile. When it reports {link} open the link in the job's tab (verifies the account), sign in and continue the application; when it reports {code} type the code into the waiting field and continue. Only when it times out (20 min) or mailcheck is not set up (MAIL_CLIENT_ID empty / not signed in: python mailcheck.py login) log Needs User as before. Never use it for anything but the current application's verification mail.",
       "7. Never print, log or copy the account password anywhere (it lives only in ..\\private\\.env as APPLICANT_PASSWORD and is typed only into a site's password fields), never solve CAPTCHAs. Close tabs of finished/skipped jobs.",
       "8. End each queue run with a short summary of submitted / needs approval / needs user (with the tabs left open)."
     ]

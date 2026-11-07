@@ -57,16 +57,25 @@
   .tab[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
   .tab .n { color: var(--muted); margin-left: 4px; }
   .notice { background: var(--accent-soft); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; font-size: 13px; }
+  /* a running search: spinning ring + seconds counter, so a long search doesn't look frozen */
+  .spin { display: inline-block; width: 12px; height: 12px; margin-right: 8px; vertical-align: -2px; border-radius: 50%;
+          border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; opacity: .7; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .elapsed { font-variant-numeric: tabular-nums; opacity: .75; margin-left: 4px; }
   .error { background: var(--bad-soft); color: var(--bad); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; white-space: pre-wrap; font-size: 13px; }
   .bulk { display: none; align-items: center; gap: 8px; margin-bottom: 12px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--accent); border-radius: var(--radius); }
   .bulk.show { display: flex; }
-  #list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+  /* one screen of jobs, no page scrolling: fitLayout() picks 1-2 columns x 1-2 rows (max 4 cards) from the window size
+     and sets --cols / --card-h; a card never gets smaller than CARD_MIN_W x CARD_MIN_H, its middle part scrolls instead */
+  #list { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+  #list > .card { height: var(--card-h, auto); min-height: 340px; overflow: hidden; }
+  .card > .cbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
+  .card > .chead, .card > .actions { flex: none; }
   #list > .empty, #list > .hidden-note, #list > .pager, #list > .listbar { grid-column: 1 / -1; }
   .listbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .listbar .hidden-note { margin: 0; flex: 1; }
   button.danger { color: var(--bad); border-color: var(--bad); }
   button.danger.armed { background: var(--bad); color: var(--panel); }
-  @media (max-width: 700px) { #list { grid-template-columns: minmax(0, 1fr); } }
   .pager { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 4px; }
   .pager .meta { min-width: 120px; text-align: center; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -77,11 +86,11 @@
   .who { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .who .co { font-size: 13px; color: var(--muted); }
   .who .co b { color: var(--text); }
-  .who .title { font-size: 18px; font-weight: 700; line-height: 1.25; }
+  .who .title { font-size: 16.5px; font-weight: 700; line-height: 1.25; }
   .who .meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
   /* fact chips (location, pay, work mode, experience, clearance) */
   .chips { display: flex; gap: 6px; flex-wrap: wrap; }
-  .chip { font-size: 12.5px; border-radius: 999px; padding: 4px 11px; background: var(--gray-soft); color: var(--text); white-space: nowrap; border: 1px solid transparent; }
+  .chip { font-size: 12.5px; border-radius: 999px; padding: 3px 10px; background: var(--gray-soft); color: var(--text); white-space: nowrap; border: 1px solid transparent; }
   .chip.strong { font-weight: 700; }
   .chip { display: inline-flex; align-items: center; gap: 5px; }
   .chip .ico { width: 14px; height: 14px; flex: none; }
@@ -126,11 +135,11 @@
   .card > .actions .links { margin-left: auto; display: flex; gap: 12px; }
   @media (max-width: 560px) { .chead { grid-template-columns: auto auto minmax(0, 1fr); } .chead .score { grid-column: 1 / -1; width: auto; } }
   /* keyword match score panel (right side of each card) */
-  .score { align-self: start; width: 92px; border-radius: 12px; padding: 10px 8px 9px; text-align: center; border: 2px solid currentColor; cursor: help; }
-  .score .num { display: block; font-size: 32px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+  .score { align-self: start; width: 84px; border-radius: 12px; padding: 6px 6px 6px; text-align: center; border: 2px solid currentColor; cursor: help; }
+  .score .num { display: block; font-size: 26px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
   .score .of { font-size: 13px; font-weight: 600; opacity: .75; }
-  .score .lbl { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
-  .score .sbar { display: block; height: 7px; border-radius: 99px; background: var(--line); margin: 7px 2px 5px; overflow: hidden; }
+  .score .lbl { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
+  .score .sbar { display: block; height: 5px; border-radius: 99px; background: var(--line); margin: 4px 2px 3px; overflow: hidden; }
   .score .fill { display: block; height: 7px; border-radius: 99px; background: var(--muted); }
   .score.strong .fill { background: var(--ok); }
   .score.good .fill { background: var(--accent); }
@@ -278,6 +287,7 @@
     <button id="answersBtn" title="Upload your resume and review the answers Claude uses on application forms">Update my answers</button>
     <button class="primary" data-search="linkedin" title="Claude searches LinkedIn in a new Chrome tab and adds about 10 candidates here">Search LinkedIn</button>
     <button class="primary" data-search="simplify" title="Adds about 10 new-grad jobs from the SimplifyJobs GitHub list (github.com/SimplifyJobs/New-Grad-Positions) that pass your search filters">Search SimplifyJobs</button>
+    <button class="primary" data-search="company" title="Jobs straight from Fortune 500 / large companies' own career sites (Workday, Amazon, Microsoft, JPMorgan ...): the list is companyJobs in your config. No Claude needed, takes about a minute">Search company sites</button>
     <button class="primary" data-search="simplifysite" title="Search the simplify.jobs website: choose location, salary, work mode etc. and paste the page's X-TYPESENSE-API-KEY header">Search Simplify website</button>
   </div>
   <div class="bar" style="padding-top:0">
@@ -285,6 +295,7 @@
     <input type="search" id="q" placeholder="Search title, company, location, description">
     <label class="sr" for="sort">Sort</label>
     <select id="sort">
+      <option value="matchtime">Best match + newest</option>
       <option value="posted">Newest posted</option>
       <option value="match">Best match</option>
       <option value="company">Company</option>
@@ -305,6 +316,13 @@
       <option value="125000">$125K+</option>
       <option value="150000">$150K+</option>
       <option value="200000">$200K+</option>
+    </select>
+    <select id="size" title="Company size (employees): from simplify.jobs and the company-sites list; jobs with no size known are kept unless you pick 'Size known only'">
+      <option value="">Any company size</option>
+      <option value="1001">1,000+ employees</option>
+      <option value="5001">5,000+ employees</option>
+      <option value="10001">10,000+ employees</option>
+      <option value="known">Size known only</option>
     </select>
     <select id="level" title="Experience level (simplify.jobs tags, else read from the title / description)">
       <option value="">Any level</option>
@@ -455,21 +473,40 @@ const GROUPS = [
 ];
 const state = { jobs: [], tab: "review", checked: new Set(), expLimits: { max: 2, stretchAt: 3 },
                 filters: [], areas: [], hide: new Set(), page: 0 };
-const PAGE_SIZE = 8;  // job cards per page, two per row
+// Job cards per page = as many as fit the window without scrolling: 1-2 columns x 1-2 rows (max 4),
+// never smaller than CARD_MIN_W x CARD_MIN_H (then the page scrolls instead of squashing the card).
+const CARD_MIN_W = 420, CARD_MIN_H = 340, CARD_GAP = 10, PAGE_PAD = 16;
+function listTop() { return $("list").getBoundingClientRect().top + window.scrollY; }
+function fitCols() {
+  const w = $("list").clientWidth || 800;
+  return w >= 2 * CARD_MIN_W + CARD_GAP ? 2 : 1;
+}
+function fitRows(extra) {
+  const h = window.innerHeight - listTop() - extra - PAGE_PAD;
+  return h >= 2 * CARD_MIN_H + CARD_GAP ? 2 : 1;
+}
+// after the cards are in: give them the height left in the window (listbar / pager rows measured, not guessed)
+function fitHeights(rows) {
+  const list = $("list"), kids = [...list.children];
+  const other = kids.filter(c => !c.classList.contains("card"));
+  const otherH = other.reduce((t, c) => t + c.getBoundingClientRect().height + CARD_GAP, 0);
+  const h = window.innerHeight - listTop() - otherH - PAGE_PAD - CARD_GAP * (rows - 1);
+  list.style.setProperty("--card-h", Math.max(CARD_MIN_H, Math.floor(h / rows)) + "px");
+}
 const $ = id => document.getElementById(id);
 const PREFS = "jobboard.filters";  // this browser only: hidden filters, location, salary
 function loadPrefs() {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS) || "{}");
     state.hide = new Set(p.hide || []);
-    state.area = p.area || ""; $("pay").value = p.pay || ""; $("level").value = p.level || ""; $("payNone").checked = p.payNone !== false;
+    state.area = p.area || ""; $("pay").value = p.pay || ""; $("level").value = p.level || ""; $("size").value = p.size || ""; $("payNone").checked = p.payNone !== false;
     $("minMatch").value = p.minMatch || ""; if (p.sort) $("sort").value = p.sort;
   } catch (e) { /* storage blocked: defaults */ }
 }
 function savePrefs() {
   try {
     localStorage.setItem(PREFS, JSON.stringify({ hide: [...state.hide], area: $("area").value, pay: $("pay").value,
-                                                 level: $("level").value, payNone: $("payNone").checked,
+                                                 level: $("level").value, size: $("size").value, payNone: $("payNone").checked,
                                                  minMatch: $("minMatch").value, sort: $("sort").value }));
   } catch (e) { /* storage blocked: choices last until reload */ }
 }
@@ -480,10 +517,13 @@ function esc(s) {
 function safeUrl(u) { return /^https?:\/\//i.test(u || "") ? u : ""; }
 function ago(iso) {
   if (!iso) return "date unknown";
-  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (m < 60) return `${m}m ago`;
-  if (m < 48 * 60) return `${Math.floor(m / 60)}h ago`;
-  return `${Math.floor(m / 1440)}d ago`;
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return "date unknown";
+  // nearest hour (never minutes); a time in the future (date-only postings stored as noon UTC) counts as now
+  const h = Math.max(0, Math.round((Date.now() - t) / 3600000));
+  if (h < 1) return "<1h ago";
+  if (h < 48) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
 }
 function pillClass(s) {
   if (s === "new") return "new";
@@ -542,8 +582,15 @@ function apply(data) {
 }
 
 // Search buttons: the request goes to Claude's session (queue watcher); Claude searches in Chrome and adds candidates here.
-const SOURCES = { google: "Google Jobs", linkedin: "LinkedIn", simplify: "SimplifyJobs", simplifysite: "Simplify website" };
-const SELF_SEARCH = ["simplify", "simplifysite"];  // fetched by the job board itself, not by Claude in Chrome
+const SOURCES = { google: "Google Jobs", linkedin: "LinkedIn", simplify: "SimplifyJobs", simplifysite: "Simplify website", company: "company career sites" };
+const SELF_SEARCH = ["simplify", "simplifysite", "company"];  // fetched by the job board itself, not by Claude in Chrome
+function tickElapsed() {  // "· 0:42 so far" on a running search, updated every second
+  document.querySelectorAll("[data-since]").forEach(e => {
+    const s = Math.max(0, Math.floor((Date.now() - new Date(e.dataset.since).getTime()) / 1000));
+    e.textContent = ` · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} so far`;
+  });
+}
+setInterval(tickElapsed, 1000);
 function showSearches(reqs) {
   const open = reqs.filter(r => r.status === "requested" || r.status === "running");
   document.querySelectorAll("[data-search]").forEach(b => {
@@ -555,7 +602,8 @@ function showSearches(reqs) {
   if (open.length) {
     msg = open.map(r => r.status === "running"
       ? (SELF_SEARCH.includes(r.source)
-           ? (r.source === "simplifysite" ? `Searching the simplify.jobs website${r.note ? " - " + r.note : ""}…` : `Fetching the ${SOURCES[r.source]} new-grad list…`)
+           ? (r.source === "simplifysite" ? `Searching the simplify.jobs website${r.note ? " - " + r.note : ""}…`
+              : r.source === "company" ? `Checking company career sites (usually 1-2 minutes)…` : `Fetching the ${SOURCES[r.source]} new-grad list…`)
          : `Claude is searching ${SOURCES[r.source]} in Chrome${r.note ? " - " + r.note : ""}…`)
       : `Waiting for Claude to start the ${SOURCES[r.source]} search (requested ${ago(r.requestedAt)})` +
         (Date.now() - new Date(r.requestedAt).getTime() > 3 * 60000 ? " - is Claude's job-search session running?" : "") + "…").join(" ");
@@ -564,7 +612,13 @@ function showSearches(reqs) {
       ? `${SOURCES[last.source]} search done: ${last.found ?? 0} new candidates added${last.note ? " - " + last.note : ""}. Approve with Add to apply queue.`
       : `${SOURCES[last.source]} search failed${last.note ? ": " + last.note : ""}.`;
   }
-  el.textContent = msg;
+  const running = open.find(r => r.status === "running" && SELF_SEARCH.includes(r.source));
+  if (running) {  // spinner + live "0:42" counter while the board server searches
+    el.innerHTML = `<span class="spin" aria-hidden="true"></span>${esc(msg)}<span class="elapsed" data-since="${esc(running.requestedAt)}"></span>`;
+    tickElapsed();
+  } else {
+    el.textContent = msg;
+  }
   el.hidden = !msg;
 }
 async function requestSearch(source) {
@@ -670,11 +724,17 @@ function filtered() {
   list = list.filter(passes);
   state.hiddenCount = before - list.length;
   const by = $("sort").value;
+  const ts = j => { const t = j.posted ? new Date(j.posted).getTime() : NaN; return isNaN(t) ? 0 : Math.min(t, Date.now()); };
+  const band = j => { const sc = (j.match || {}).score; return sc == null ? -1 : sc >= 80 ? 3 : sc >= 65 ? 2 : sc >= 50 ? 1 : 0; };
   const cmp = {
-    posted: (a, b) => (b.posted || "").localeCompare(a.posted || ""),
+    // match band first (Strong 80+ / Good 65+ / Fair 50+ / Low), newest first inside each band, then the exact score
+    matchtime: (a, b) => band(b) - band(a)
+      || (ts(b) - ts(a))
+      || ((b.match || {}).score ?? -1) - ((a.match || {}).score ?? -1),
+    posted: (a, b) => (ts(b) - ts(a)),
     match: (a, b) => ((b.match || {}).score ?? -1) - ((a.match || {}).score ?? -1)
       || ((b.match || {}).matched || []).length - ((a.match || {}).matched || []).length
-      || (b.posted || "").localeCompare(a.posted || ""),
+      || (ts(b) - ts(a)),
     company: (a, b) => (a.company || "").localeCompare(b.company || "") || (a.title || "").localeCompare(b.title || ""),
     title: (a, b) => (a.title || "").localeCompare(b.title || ""),
     location: (a, b) => (a.location || "").localeCompare(b.location || ""),
@@ -690,11 +750,18 @@ function passes(j) {
   if (area === "~other" ? (j.areas || []).length : area && !(j.areas || []).includes(area)) return false;
   if (pay === "listed" && j.payMax == null) return false;
   if (pay && pay !== "listed" && (j.payMax == null ? !$("payNone").checked : j.payMax < Number(pay))) return false;
+  const size = $("size").value, emp = sizeFloor(j.companySize);  // company size: lowest count of its bucket
+  if (size === "known" ? emp == null : size && emp != null && emp < Number(size)) return false;
   const lvl = $("level").value, classes = levelLabels(j).map(levelClass);
   if (lvl === "none" ? classes.length : lvl && !classes.includes(lvl)) return false;
   const min = Number($("minMatch").value || 0);
   if (min && ((j.match || {}).score ?? 0) < min) return false;
   return !(j.flags || []).some(f => state.hide.has(f));
+}
+
+function sizeFloor(s) {  // "1,001-5,000" -> 1001, "10,001+" -> 10001, "" -> null
+  const m = String(s || "").match(/[\d,]+/);
+  return m ? Number(m[0].replace(/,/g, "")) : null;
 }
 
 function renderFilters() {
@@ -722,8 +789,15 @@ function render() {
       : state.tab === "review" ? "Nothing new to review. Click a search button for new candidates." : "No jobs in this view.";
     $("list").innerHTML = `<div class="empty">${msg}</div>`;
   } else {
+    const cols = fitCols();
+    $("list").style.setProperty("--cols", cols);
+    const rows = fitRows(state.tab === "review" || state.hiddenCount ? 80 : 44);
+    const PAGE_SIZE = cols * rows;
+    // keep the first job on screen when the page size changes (window resized)
+    if (state.pageSize && state.pageSize !== PAGE_SIZE) state.page = Math.floor(state.page * state.pageSize / PAGE_SIZE);
+    state.pageSize = PAGE_SIZE;
     const pages = Math.ceil(list.length / PAGE_SIZE);
-    state.page = Math.min(state.page, pages - 1);
+    state.page = Math.max(0, Math.min(state.page, pages - 1));
     const from = state.page * PAGE_SIZE;
     const pager = pages > 1 ? `<div class="pager">
         <button data-page="${state.page - 1}" ${state.page === 0 ? "disabled" : ""}>← Previous</button>
@@ -734,6 +808,7 @@ function render() {
       ? `<button class="danger ${state.armRemove ? "armed" : ""}" data-act="removeall" title="Delete these jobs from the board - later searches won't add them again">${state.armRemove ? `Click again to remove ${list.length}` : `Remove all ${list.length}${state.hiddenCount ? " shown" : ""}`}</button>` : "";
     $("list").innerHTML = (state.hiddenCount || removeAll ? `<div class="listbar">${note}${removeAll}</div>` : "")
       + list.slice(from, from + PAGE_SIZE).map(card).join("") + pager;
+    fitHeights(rows);  // same card size on every page, also the last, shorter one
   }
 
   const q = state.jobs.filter(j => j.status === "selected" || j.status === "applying")
@@ -921,6 +996,8 @@ function cardNotes(j) {
 function card(j) {
   const s = j.status, k = esc(j.key);
   const posting = safeUrl(j.url), applyUrl = safeUrl(j.applyUrl);
+  const original = applyUrl || posting;  // the company's own posting first; Simplify / LinkedIn page only without one
+  const listing = j.source && String(j.source).startsWith("simplify") ? "Simplify page" : "Listing";
   const canChoose = s === "new" || s === "selected" || s === "skipped";
   const buttons = [];
   if (s === "new" || s === "skipped") buttons.push(`<button class="primary" data-act="selected" data-key="${k}">Add to apply queue</button>`);
@@ -936,8 +1013,8 @@ function card(j) {
   if (s === "Needs User")  // back to the end of the apply queue; Claude continues in the tab it left open
     buttons.push(`<button data-act="continue" data-key="${k}" title="Back to the end of the apply queue - Claude finishes it in the tab it left open">Continue application</button>`);
   const links = [];
-  if (posting) links.push(`<a href="${esc(posting)}" target="_blank" rel="noopener noreferrer">Open posting ↗</a>`);
-  if (applyUrl && applyUrl !== posting) links.push(`<a href="${esc(applyUrl)}" target="_blank" rel="noopener noreferrer">Apply page ↗</a>`);
+  if (original) links.push(`<a href="${esc(original)}" target="_blank" rel="noopener noreferrer">Original posting ↗</a>`);
+  if (posting && posting !== original) links.push(`<a href="${esc(posting)}" target="_blank" rel="noopener noreferrer">${listing} ↗</a>`);
   const via = j.direct === false && j.publisher ? ` · via ${esc(j.publisher)}` : "";
   return `
     <article class="card ${s === "selected" || s === "applying" ? "selected" : ""}">
@@ -946,15 +1023,17 @@ function card(j) {
         <div class="logo" style="background:${logoColor(j.company)}" aria-hidden="true">${esc(initials(j.company))}</div>
         <div class="who">
           <div class="co"><b>${esc(j.company)}</b>${j.companySize ? ` · ${esc(j.companySize)} employees` : ""}</div>
-          ${posting ? `<a class="title" href="${esc(posting)}" target="_blank" rel="noopener noreferrer">${esc(j.title)}</a>` : `<span class="title">${esc(j.title)}</span>`}
+          ${original ? `<a class="title" href="${esc(original)}" target="_blank" rel="noopener noreferrer" title="Open the company's own posting">${esc(j.title)}</a>` : `<span class="title">${esc(j.title)}</span>`}
           <div class="meta"><span class="pill ${pillClass(s)}">${esc(pillText(s))}</span>${levelBadges(j)}
             <span>${esc(ago(j.posted))}</span><span>· ${esc(j.source)}${via}</span></div>
         </div>
         ${scorePanel(j)}
       </div>
+      <div class="cbody">
       ${factChips(j)}
       ${matchNote(j)}
       ${cardNotes(j)}
+      </div>
       <div class="actions">${buttons.join("")}<span class="links">${links.join("")}</span></div>
     </article>`;
 }
@@ -995,7 +1074,7 @@ document.addEventListener("click", e => {
   const t = e.target.closest("button");
   if (!t) return;
   if (t.dataset.tab) { state.tab = t.dataset.tab; state.page = 0; render(); return; }
-  if (t.dataset.page) { state.page = Number(t.dataset.page); render(); $("list").scrollIntoView({ block: "start" }); return; }
+  if (t.dataset.page) { state.page = Number(t.dataset.page); render(); window.scrollTo(0, 0); return; }
   const act = t.dataset.act, key = t.dataset.key;
   if (act === "removeall") { removeAll(); return; }
   else if (act === "up") move(key, -1);
@@ -1023,8 +1102,10 @@ document.addEventListener("change", e => {
 $("bulkSelect").onclick = () => { const k = [...state.checked]; state.checked.clear(); choose(k, "selected"); };
 $("bulkSkip").onclick = () => { const k = [...state.checked]; state.checked.clear(); choose(k, "skipped"); };
 $("bulkClear").onclick = () => { state.checked.clear(); render(); };
+let resizeTimer;
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 150); });
 ["q", "source"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; render(); }));
-["area", "pay", "level", "payNone", "minMatch", "sort"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; savePrefs(); render(); }));
+["area", "pay", "level", "size", "payNone", "minMatch", "sort"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; savePrefs(); render(); }));
 $("filtersAll").onclick = () => { state.filters.forEach(f => state.hide.add(f.id)); state.page = 0; savePrefs(); render(); };
 $("filtersNone").onclick = () => { state.hide.clear(); state.page = 0; savePrefs(); render(); };
 loadPrefs();

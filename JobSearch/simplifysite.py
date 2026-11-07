@@ -25,6 +25,7 @@ import datetime as dt
 import html
 import json
 import re
+import http.client
 import urllib.error
 import urllib.request
 
@@ -375,6 +376,49 @@ def _job_ld(page):
     return None
 
 
+def _get_json(url):
+    """JSON from a public job-board API, or None."""
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read().decode("utf-8", "replace"))
+    except (OSError, ValueError, http.client.HTTPException):
+        return None
+
+
+def ats_text(url):
+    """The posting text from the applicant-tracking system's public API (Lever, Greenhouse, Ashby, Workday) - the
+    full posting with its own section headings, even when the link is the application form page. '' otherwise."""
+    m = re.search(r"jobs\.lever\.co/([^/?#]+)/([0-9a-f-]{36})", url)
+    if m:
+        d = _get_json(f"https://api.lever.co/v0/postings/{m[1]}/{m[2]}") or {}
+        lists = " ".join(f'{x.get("text", "")}: {_plain(x.get("content"))}.' for x in d.get("lists") or [])
+        return " ".join(v for v in (d.get("descriptionPlain", ""), lists, d.get("additionalPlain", "")) if v).strip()
+    m = (re.search(r"greenhouse\.io/([^/?#&]+)/jobs/(\d+)", url)
+         or re.search(r"greenhouse\.io/embed/job_app\?for=([^&#]+)&token=(\d+)", url))
+    if m:
+        d = _get_json(f"https://boards-api.greenhouse.io/v1/boards/{m[1]}/jobs/{m[2]}") or {}
+        return _plain(html.unescape(d.get("content") or ""))
+    m = re.search(r"jobs\.ashbyhq\.com/([^/?#]+)/([0-9a-f-]{36})", url)
+    if m:
+        d = _get_json(f"https://api.ashbyhq.com/posting-api/job-board/{m[1]}") or {}
+        job = next((j for j in d.get("jobs") or [] if j.get("id") == m[2]), {})
+        return _plain(job.get("descriptionHtml") or job.get("descriptionPlain") or "")
+    m = re.search(r"apply\.workable\.com/([^/?#]+)/j/([0-9A-F]+)", url)
+    if m:
+        d = _get_json(f"https://apply.workable.com/api/v2/accounts/{m[1]}/jobs/{m[2]}") or {}
+        return f'{_plain(d.get("description"))}. Requirements: {_plain(d.get("requirements"))}' if d.get("requirements") else _plain(d.get("description"))
+    m = re.search(r"careers\.microsoft\.com/(?:careers|us/en)/job/(\d+)", url)
+    if m:
+        d = _get_json(f"https://apply.careers.microsoft.com/api/apply/v2/jobs/{m[1]}?domain=microsoft.com") or {}
+        return _plain(d.get("job_description") or "")
+    m = re.search(r"https://(([^./]+)\.wd\d+\.myworkdayjobs\.com)/(?:[a-z]{2}-[A-Z]{2}/)?([^/?#]+)/(job/[^?#]+)", url)
+    if m:
+        d = _get_json(f"https://{m[1]}/wday/cxs/{m[2]}/{m[3]}/{m[4]}") or {}
+        return _plain((d.get("jobPostingInfo") or {}).get("jobDescription") or "")
+    return ""
+
+
 def original_posting(click_url):
     """Follow the job's simplify.jobs/jobs/click link to the company's own posting. Returns (posting URL, text) - the
     text from its JobPosting JSON-LD (qualifications, responsibilities, skills, description) or, without one, the
@@ -386,34 +430,49 @@ def original_posting(click_url):
         with urllib.request.urlopen(req, timeout=30) as r:
             final = re.sub(r"[?&](?:utm_[a-z]+|ref|src|gh_src)=[^&]*", "", r.geturl()).rstrip("?&")
             page = r.read(3_000_000).decode("utf-8", "replace")
-    except (OSError, ValueError):
-        return "", ""
+    except (OSError, ValueError, http.client.HTTPException):
+        final, page = click_url, ""
     if "simplify.jobs" in final:
         return "", ""
+    own = ats_text(final)
+    if own and has_quals(own):
+        return final, own[:30000]
     ld = _job_ld(page)
     if ld:
         quals = _plain(ld.get("qualifications") or ld.get("experienceRequirements") or ld.get("educationRequirements"))
         parts = [("Requirements", quals), ("Responsibilities", _plain(ld.get("responsibilities"))),
                  ("Skills", _plain(ld.get("skills"))), ("Description", _plain(ld.get("description"))[:20000])]
-        return final, " ".join(f"{k}: {v}" for k, v in parts if v)
+        return final, ". ".join(f"{k}: {v}" for k, v in parts if v)
     body = re.sub(r"<script.*?</script>|<style.*?</style>", " ", page, flags=re.S | re.I)
     body = _plain(body)
-    return final, (body[:20000] if re.search(r"qualifications|requirements", body, re.I) else "")
+    body = body[:30000]
+    return final, (body if has_quals(body) else "")
+
+
+def has_quals(text):
+    """True when a company posting's text shows its qualifications: a JSON-LD qualifications field, or Minimum /
+    Required / Preferred Qualifications sections under the posting's own headings."""
+    import matchscore  # same folder (lazy: matchscore is only needed here)
+    if text.startswith("Requirements: "):
+        return True
+    req, pref = matchscore.qual_sections(text)
+    return len(req.strip()) + len(pref.strip()) > 80
 
 
 def details(job_id):
-    """(posting text, company size, Simplify skills, company posting URL) from the job's simplify.jobs page (the search
-    API has no description): requirements first (years / clearance are read from them), then preferred qualifications
-    and the whole description. Simplify hasn't processed every posting yet (no requirements / skills on its page, e.g.
-    a brand-new Meta job): then the company's own posting is read too (original_posting), so the match score, years
-    and clearance see the real qualifications. ('', '', [], '') if unavailable."""
+    """(posting text, company size, Simplify skills, company posting URL, source) for a Simplify job. The company's
+    own posting (original_posting, via Simplify's click-through link) is the source of the qualifications whenever it
+    can be read and shows them (user 2026-11-06: Simplify's rewritten requirement lists are not accurate); Simplify's
+    page (requirements, preferred, responsibilities, description) is only the fallback. Company size and Simplify's
+    skill list always come from the simplify.jobs page. source = 'company posting' | 'Simplify'.
+    ('', '', [], '', '') if unavailable."""
     req = urllib.request.Request(f"https://simplify.jobs/p/{job_id}", headers={"User-Agent": "Mozilla/5.0"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             m = NEXT_DATA.search(r.read().decode("utf-8", "replace"))
         post = json.loads(m.group(1))["props"]["pageProps"]["jobPosting"]
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        return "", "", [], ""
+    except (OSError, ValueError, http.client.HTTPException, KeyError, TypeError, AttributeError):
+        return "", "", [], "", ""
     reqs, des = post.get("requirements") or [], post.get("desirable") or []
     resp = post.get("responsibilities") or []
     # whole posting text: its own required / preferred qualifications often come after the responsibilities
@@ -421,13 +480,11 @@ def details(job_id):
              ("Description", (("Responsibilities: " + "; ".join(resp) + ". ") if resp else "") + _plain(post.get("description"))[:20000])]
     size = company_size(((post.get("job") or {}).get("company") or {}).get("company_size"))
     skills = [s.get("name") for s in post.get("skills") or [] if isinstance(s, dict) and s.get("name")]
-    text = " ".join(f"{k}: {v}" for k, v in parts if v)
-    posting_url = ""
-    if not reqs or len(text) < 1500:  # Simplify has no qualifications for it yet: read the company's posting
-        posting_url, own = original_posting(post.get("url"))
-        if own:
-            text = own
-    return text, size, skills, posting_url
+    text = ". ".join(f"{k}: {v}" for k, v in parts if v)
+    posting_url, own = original_posting(post.get("url"))
+    if own and has_quals(own):
+        return own, size, skills, posting_url, "company posting"
+    return text, size, skills, posting_url, "Simplify"
 
 
 def add_details(jobs, workers=8):
@@ -435,15 +492,27 @@ def add_details(jobs, workers=8):
     skill list into simplifySkills (used by the match score) and the company posting into applyUrl when it was
     read, several pages at a time."""
     with concurrent.futures.ThreadPoolExecutor(workers) as ex:
-        for j, (text, size, skills, url) in zip(jobs, ex.map(lambda j: details(j["id"]), jobs)):
+        for j, (text, size, skills, url, source) in zip(jobs, ex.map(lambda j: details(j["id"]), jobs)):
             if size:
                 j["companySize"] = size
             if skills:
                 j["simplifySkills"] = skills
+                try:
+                    import skillbank  # same folder: remember skill names Simplify tags, for the match score
+                    skillbank.learn(skills)
+                except Exception:
+                    pass
             if url and not j.get("applyUrl"):
                 j["applyUrl"] = url
+            if source:
+                j["qualsFrom"] = source
             if text:
-                head = re.split(r"\.? Requirements: |\. Requirements \(years|\.? Description: ", j["description"], maxsplit=1)[0]
+                # keep only the search note ("[last 24h] simplify.jobs website search: level Junior") and replace the
+                # rest, so re-reading a job (--refresh) never stacks the posting text twice
+                m = re.match(r"(?:\[[^\]]*\] )?(?:simplify\.jobs website search|SimplifyJobs new-grad list \([^)]*\))[^.]*",
+                             j["description"])
+                head = m.group(0) if m else re.split(r"\.? Requirements: |\. Requirements \(years|\.? Description: ",
+                                                     j["description"], maxsplit=1)[0]
                 j["description"] = head.rstrip(".") + ". " + text
 
 
@@ -485,12 +554,36 @@ def run(board_jobs, cfg=None, key=None, opts=None, cursor=None):
     return candidates(docs, board_jobs, cfg, o)[0], progress(c, s, len(docs)), c
 
 
+def refresh():
+    """Re-read every Simplify job on the board (details: company posting first) and save the new text."""
+    import jobboard  # same folder
+    with jobboard.LOCK:
+        board = jobboard.load_board()
+    jobs = [dict(j) for j in board["jobs"].values() if "simplify.jobs/p/" in (j.get("url") or "") and j.get("id")]
+    add_details(jobs)
+    with jobboard.LOCK:  # merge into the latest file: the server may have saved in the meantime
+        board = jobboard.load_board()
+        for j in jobs:
+            cur = board["jobs"].get(j["key"])
+            if cur is not None:
+                for k in ("description", "qualsFrom", "applyUrl", "simplifySkills", "companySize"):
+                    if j.get(k):
+                        cur[k] = j[k]
+        jobboard.save_board(board)
+    n = sum(j.get("qualsFrom") == "company posting" for j in jobs)
+    print(f"{len(jobs)} Simplify jobs re-read: {n} from the company posting, {len(jobs) - n} from Simplify (posting unreadable / no qualifications)")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--raw", action="store_true", help="print the first result document and stop")
+    ap.add_argument("--refresh", action="store_true",
+                    help="re-read the qualifications of the Simplify jobs already on the board from the company postings")
     a = ap.parse_args()
     cfg = json.loads(jobfilters.CONFIG.read_text(encoding="utf-8"))
+    if a.refresh:
+        return refresh()
     if a.raw:
         docs = search(saved_key(), settings(cfg))[0]
         print(f"{len(docs)} documents; first one:")

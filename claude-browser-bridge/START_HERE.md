@@ -16,7 +16,11 @@ Prerequisites: [Node.js](https://nodejs.org) 20+, Google Chrome, Claude Code (`c
    ```
    Copy the `Token:` value. It is saved as `BRIDGE_TOKEN` in `<repo>\private\.env` (created if missing).
 
-2. **Load the extension in Chrome**
+2. **Load the extension in Chrome** - in the **job-only Chrome profile** when `launcher.chromeProfileDir` is set in
+   `private\job-search-config.json` (default `private\chrome-job-profile`): `StartJobSearch.exe` opens that profile
+   (or run `chrome.exe --user-data-dir="<repo>\private\chrome-job-profile"`). Install the extension only there and
+   remove it from your normal Chrome, so Claude never works in your personal browser. Sign in to LinkedIn and your
+   job-site accounts in that profile once.
    - Go to `chrome://extensions`
    - Turn on **Developer mode** (top right)
    - Click **Load unpacked** → choose `<repo>\claude-browser-bridge\extension`

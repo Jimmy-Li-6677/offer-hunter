@@ -42,7 +42,7 @@ STATUS_FILTERS = {"logged", "skipped"}  # the job board shows these as tabs, not
 CBP = re.compile(r"\b(customs and border protection|CBP)\b", re.I)
 GRAD_2027 = re.compile(r"\bclass of 2027\b|\b2027 grad|\bgraduat\w*[^.]{0,60}\b2027\b", re.I)
 GRAD_2025 = re.compile(r"\b2025\b")
-AMAZON_SDE = re.compile(r"\b(software development engineer|SDE)\b", re.I)
+AMAZON_SDE = re.compile(r"\b(software dev(?:elopment|\.)? engineer|SDE)\b", re.I)  # "Software Dev Engineer" too
 CLEARANCE = re.compile(r"\b(active|current)\s+(TS|top secret|secret|TS/SCI)\b|\bTS/SCI\b|\bpolygraph\b", re.I)
 
 

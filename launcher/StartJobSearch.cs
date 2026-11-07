@@ -88,17 +88,38 @@ static class StartJobSearch
         bool startChrome = Get(launcher, "startChrome", "true").ToLower() == "true";
         string chromePath = Get(launcher, "chromePath", @"C:\Program Files\Google\Chrome\Application\chrome.exe");
         string permissionMode = Get(launcher, "claudePermissionMode", "");
+        // A Chrome profile used only for job hunting (its own folder, its own job-site logins, none of the user's
+        // personal accounts). Empty = the user's normal Chrome profile.
+        string profileSetting = Get(launcher, "chromeProfileDir", "");
+        string profileDir = profileSetting.Trim() == "" ? "" :
+            Path.GetFullPath(Path.IsPathRooted(profileSetting) ? profileSetting : Path.Combine(jobDir, "..", profileSetting));
+        string profileArgs = profileDir == "" ? "" : "--user-data-dir=\"" + profileDir + "\" --no-first-run --no-default-browser-check";
+        bool newProfile = profileDir != "" && !Directory.Exists(profileDir);
 
         // --dry-run: print what would be launched instead of launching it.
         bool dryRun = Environment.GetCommandLineArgs().Contains("--dry-run");
 
         // ---- Chrome ----
-        if (!dryRun && startChrome &&Process.GetProcessesByName("chrome").Length == 0)
+        if (!dryRun && startChrome && (profileDir != "" || Process.GetProcessesByName("chrome").Length == 0))
         {
             if (!File.Exists(chromePath))
                 throw new Exception("Chrome not found at:\n" + chromePath + "\nFix launcher.chromePath in job-search-config.json.");
-            Process.Start(chromePath);
+            // with a job profile Chrome runs as its own window next to the user's normal Chrome; starting it again
+            // when it is already open just opens a window in it
+            Process.Start(chromePath, profileArgs);
             System.Threading.Thread.Sleep(3000); // let the extension load
+            if (newProfile)
+                MessageBox.Show(
+                    "A new Chrome profile only for job hunting was created:\n" + profileDir + "\n\n" +
+                    "One-time setup in the Chrome window that just opened:\n" +
+                    "1. Go to chrome://extensions, turn on Developer mode, click Load unpacked and choose\n" +
+                    "   " + Path.GetFullPath(Path.Combine(jobDir, "..", "claude-browser-bridge", "extension")) + "\n" +
+                    "2. Click the extension icon, paste BRIDGE_TOKEN from private\\.env, Save & connect\n" +
+                    "   (re-add any extra Allowed sites you had).\n" +
+                    "3. Sign in to LinkedIn and your job-site accounts in this window.\n" +
+                    "4. In your NORMAL Chrome, remove (or turn off) Claude Browser Bridge, so only this profile connects.\n\n" +
+                    "Claude then works only in this profile - never in your personal Chrome.",
+                    Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         // ---- Job board page (JobSearch\jobboard.py): the user picks which jobs Claude applies to ----
@@ -123,7 +144,7 @@ static class StartJobSearch
                 });
                 for (int i = 0; i < 25 && !PortOpen(boardPort); i++) System.Threading.Thread.Sleep(200);
             }
-            if (File.Exists(chromePath)) Process.Start(chromePath, boardUrl);
+            if (File.Exists(chromePath)) Process.Start(chromePath, (profileArgs + " " + boardUrl).Trim());
             else Process.Start(boardUrl);
         }
 
@@ -168,6 +189,7 @@ static class StartJobSearch
         {
             Console.WriteLine("cwd:    " + jobDir);
             Console.WriteLine("chrome: " + (startChrome ? chromePath : "(not started)"));
+            Console.WriteLine("chrome profile: " + (profileDir == "" ? "(your normal profile)" : profileDir));
             Console.WriteLine("board:  " + (openBoard ? python + " jobboard.py serve --no-browser -> " + boardUrl +
                                             (PortOpen(boardPort) ? " (already running)" : "") : "(not opened)"));
             Console.WriteLine("bridge: port " + bridgePort + (sessionRunning

@@ -16,6 +16,7 @@ claude-browser-bridge/logs/
 
 # Claude Code session state / editor / caches / build output
 JobSearch/.claude/
+JobSearch/cache/
 .vs/
 __pycache__/
 *.pyc
