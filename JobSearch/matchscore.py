@@ -20,6 +20,7 @@ import re
 import sys
 
 import applog  # same folder: paths
+import glossary  # same folder: what each keyword means (the card's Missing list)
 import jobinfo  # same folder: where a post's "preferred / nice to have" part starts
 
 RESUME = applog.PRIVATE / "resume.json"
@@ -128,7 +129,10 @@ SKILLS_LIST_ONLY = {"Embedded", "Hardware interfaces", "ROS", "FPGA/Verilog", "U
 IMPLIES = {"GitHub": {"Git"}, "Azure DevOps": {"CI/CD", "Git", "DevOps"}, "AWS S3": {"AWS"}, "AWS Amplify": {"AWS"},
            "AWS Lambda": {"AWS", "Serverless"}, "ASP.NET": {".NET"}, ".NET MAUI": {".NET"}, "Next.js": {"React"},
            "React Native": {"Mobile apps"}, "xUnit/NUnit": {"Unit testing"}, "Stored procedures": {"SQL"},
-           "MySQL": {"SQL"}, "PostgreSQL": {"SQL"}, "SQL Server": {"SQL"}, "TypeScript": {"JavaScript"}}
+           "MySQL": {"SQL"}, "PostgreSQL": {"SQL"}, "SQL Server": {"SQL"}, "TypeScript": {"JavaScript"},
+           # a cloud provider is cloud experience; SOLID / C# / Java are object-oriented; Hangfire jobs run in the background
+           "AWS": {"Cloud"}, "Azure": {"Cloud"}, "GCP": {"Cloud"}, "SOLID": {"Object-oriented"},
+           "C#": {"Object-oriented"}, "Java": {"Object-oriented"}, "Hangfire": {"Asynchronous processing"}}
 
 _B = r"(?<![A-Za-z0-9+#./-])(?:{})(?![A-Za-z0-9+#])"
 _RX = {name: re.compile(_B.format(rx), re.I) for name, rx in VOCAB.items()}
@@ -163,8 +167,11 @@ def profile(resume=None):
     parts.append(resume.get("summary") or "")
     skills = terms("\n".join(map(str, listed))) | (terms("\n".join(map(str, parts))) - SKILLS_LIST_ONLY)
     skills |= {str(x).strip() for x in listed if str(x).strip() in VOCAB}  # an item that IS a keyword name ("C", "Go")
-    for t in list(skills):
-        skills |= IMPLIES.get(t, set())
+    while True:  # implied skills can imply more (AWS S3 -> AWS -> Cloud)
+        more = set().union(*(IMPLIES.get(t, set()) for t in skills)) - skills
+        if not more:
+            break
+        skills |= more
     text = "\n".join(map(str, listed + parts))  # for keywords outside VOCAB (e.g. from Simplify's skill list)
     return {"skills": skills, "text": text}
 
@@ -229,7 +236,10 @@ def score(j, prof):
     value = round(100 * len(matched) / len(found))
     label = "Strong" if value >= 80 else "Good" if value >= 65 else "Fair" if value >= 50 else "Low"
     return {"score": value, "label": label, "matched": matched, "missing": missing, "added": added, "found": len(found),
-            "required": [len(required & have), len(required)], "desired": [len(desired & have), len(desired)]}
+            "required": [len(required & have), len(required)], "desired": [len(desired & have), len(desired)],
+            # what each missing keyword is + similar skills already on the resume (glossary.py, for the card's list)
+            "explain": {t: glossary.explain(t, have) for t in missing},
+            "requiredMissing": [t for t in missing if t in required]}
 
 
 def main(argv):

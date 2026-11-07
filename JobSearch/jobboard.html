@@ -69,7 +69,62 @@
   @media (max-width: 700px) { #list { grid-template-columns: minmax(0, 1fr); } }
   .pager { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 4px; }
   .pager .meta { min-width: 120px; text-align: center; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  /* card header: checkbox, company initials, company / title / posted, score */
+  .chead { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+  .chead input[type=checkbox] { margin-top: 12px; }
+  .logo { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; font-weight: 800; font-size: 15px; color: #333; border: 1px solid var(--line); }
+  .who { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .who .co { font-size: 13px; color: var(--muted); }
+  .who .co b { color: var(--text); }
+  .who .title { font-size: 18px; font-weight: 700; line-height: 1.25; }
+  .who .meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  /* fact chips (location, pay, work mode, experience, clearance) */
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font-size: 12.5px; border-radius: 999px; padding: 4px 11px; background: var(--gray-soft); color: var(--text); white-space: nowrap; border: 1px solid transparent; }
+  .chip.strong { font-weight: 700; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; }
+  .chip .ico { width: 14px; height: 14px; flex: none; }
+  .chip.muted { color: var(--muted); }
+  .chip.ok { background: var(--ok-soft); color: var(--ok); font-weight: 600; }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+  .chip.bad { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); font-weight: 700; }
+  /* sections: On your resume / Missing */
+  .csec { border-top: 1px solid var(--line); padding-top: 8px; }
+  /* keyword box: On your resume (left) | Missing (right) */
+  .kwgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); border-top: 1px solid var(--line); }
+  .kwgrid .csec { border-top: 0; padding: 8px 0 0; min-width: 0; }
+  .kwgrid .csec.have { padding-right: 12px; }
+  .kwgrid .csec.miss { padding-left: 12px; border-left: 1px solid var(--line); }
+  @media (max-width: 900px) { .kwgrid { grid-template-columns: minmax(0, 1fr); } .kwgrid .csec.have { padding-right: 0; } .kwgrid .csec.miss { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); margin-top: 8px; } }
+  .csec h4 { margin: 0 0 6px; font-size: 13px; font-weight: 700; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .csec h4 .cnt { font-size: 11px; font-weight: 700; color: var(--muted); background: var(--gray-soft); border-radius: 999px; padding: 0 7px; }
+  .csec h4 .hint { font-size: 11.5px; font-weight: 400; color: var(--muted); }
+  .csec .none { font-size: 12px; color: var(--muted); }
+  .kwrow { display: flex; gap: 5px; flex-wrap: wrap; }
+  .kwchip { font-size: 12px; border-radius: 999px; padding: 1px 9px; background: var(--ok-soft); color: var(--ok); }
+  .kwchip.added { font-weight: 700; border: 1px solid var(--ok); }
+  .csec button.kwb { font: inherit; font-size: 12px; padding: 1px 9px; border-radius: 999px; cursor: pointer; line-height: 18px; }
+  .csec button.kwb.miss { color: var(--bad); border: 1px dashed var(--bad); background: transparent; font-weight: 600; }
+  .csec button.kwb.miss:hover { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); border-style: solid; }
+  .csec button.kwb.added { color: var(--ok); border: 1px solid var(--ok); background: var(--ok-soft); font-weight: 700; }
+  .csec button.kwb.added:hover { text-decoration: line-through; }
+  .csec .misslist { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  .csec .misslist li { display: flex; gap: 8px; align-items: baseline; font-size: 12px; line-height: 1.4; }
+  .csec .misslist li > button.kwb, .csec .misslist li > .kwname, .csec .misslist li > .req { flex: none; }
+  .csec .kwname { color: var(--bad); font-weight: 600; }
+  .csec .expl { color: var(--muted); min-width: 0; }
+  .csec .what { color: var(--text); }
+  .csec .aka { font-style: italic; }
+  .csec .sim { color: var(--ok); font-weight: 600; }
+  .csec .req { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--bad); border: 1px solid var(--bad); border-radius: 4px; padding: 0 4px; }
+  /* notes + actions */
+  .cnotes { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .cnotes .note, .cnotes .resumenote { font-size: 12px; color: var(--muted); margin: 0; }
+  .cnotes .note.warn { color: var(--warn); }
+  .card > .actions { border-top: 1px solid var(--line); padding-top: 10px; margin-top: auto; align-items: center; }
+  .card > .actions .links { margin-left: auto; display: flex; gap: 12px; }
+  @media (max-width: 560px) { .chead { grid-template-columns: auto auto minmax(0, 1fr); } .chead .score { grid-column: 1 / -1; width: auto; } }
   /* keyword match score panel (right side of each card) */
   .score { align-self: start; width: 92px; border-radius: 12px; padding: 10px 8px 9px; text-align: center; border: 2px solid currentColor; cursor: help; }
   .score .num { display: block; font-size: 32px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
@@ -122,11 +177,21 @@
   .matchnote button.kwb.miss:hover { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); border-style: solid; }
   .matchnote button.kwb.added { color: var(--ok); border: 1px solid var(--ok); background: var(--ok-soft); font-weight: 600; }
   .matchnote button.kwb.added:hover { text-decoration: line-through; }
+  /* Missing keywords: a list, each with what it is, other names, and similar skills already on the resume */
+  .misslist { margin: 4px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 3px 14px; }
+  .misslist li { display: flex; gap: 6px; align-items: baseline; line-height: 1.35; }
+  .misslist li > button.kwb, .misslist li > .kwname { flex: none; }
+  .misslist .kwname { color: var(--bad); font-weight: 600; }
+  .misslist .what { color: var(--text); }
+  .misslist .aka { color: var(--muted); font-style: italic; }
+  .misslist .sim { color: var(--ok); font-weight: 600; }
+  .misslist .req { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--bad); border: 1px solid var(--bad); border-radius: 4px; padding: 0 3px; }
+  .misshead { margin-top: 4px; }
   .resumenote { font-size: 12px; margin-top: 4px; color: var(--muted); }
   .resumenote.ready { color: var(--ok); }
   .resumenote.failed { color: var(--bad); }
   .resumenote.building { color: var(--warn); }
-  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0 2px; }
+  .facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 8px 0 2px; }
   .fact { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--gray-soft); min-width: 0; }
   .fact .k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .fact .v { display: block; font-size: 14px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
@@ -135,6 +200,10 @@
   .fact.fit { background: var(--ok-soft); border-color: transparent; } .fact.fit .v { color: var(--ok); }
   .fact.stretch { background: var(--warn-soft); border-color: transparent; } .fact.stretch .v { color: var(--warn); }
   .fact.senior { background: var(--bad-soft); border-color: transparent; } .fact.senior .v { color: var(--bad); }
+  /* Clearance box: active = must already hold one (red), obtain / Public Trust = can get one after hire (amber) */
+  .fact.clr-active { background: var(--bad-soft); border-color: var(--bad); } .fact.clr-active .v { color: var(--bad); }
+  .fact.clr-obtain, .fact.clr-trust { background: var(--warn-soft); border-color: transparent; } .fact.clr-obtain .v, .fact.clr-trust .v { color: var(--warn); }
+  .fact.clr-mentioned .v { color: var(--warn); }
   @media (max-width: 560px) { .facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
   .lognote { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .actions { display: flex; gap: 8px; margin-top: auto; padding-top: 8px; flex-wrap: wrap; }
@@ -700,7 +769,24 @@ function facts(j) {
         ${level ? `<span class="lvl">${esc(level)}</span>` : ""}</div>
       <div class="fact"><span class="k">Work mode</span>
         <span class="v ${j.workMode ? "" : "none"}">${esc(j.workMode || "Not stated")}</span></div>
+      ${clearanceFact(j)}
     </div>`;
+}
+
+// security clearance from the posting (jobinfo.clearance_from): active = must already hold one -> the "Active clearance
+// required" filter; obtain / Public Trust = can be granted after hire (you're eligible as a US citizen)
+function clearanceFact(j) {
+  const c = j.clearance;
+  if (!c) return `<div class="fact" title="The posting doesn't mention a security clearance"><span class="k">Clearance</span><span class="v none">Not mentioned</span></div>`;
+  const kind = c.type ? ` ${c.type}` : "";
+  const [cls, v, sub] = {
+    active: ["clr-active", `Active${kind} required`, "must already hold it"],
+    obtain: ["clr-obtain", `${c.type || "Clearance"} - able to obtain`, "can be granted after hire"],
+    "public trust": ["clr-trust", "Public Trust", "can be granted after hire"],
+    mentioned: ["clr-mentioned", `Mentions${kind || " a"} clearance`, "check the posting"],
+  }[c.need] || ["", "Clearance", ""];
+  return `<div class="fact ${cls}" title="${esc("From the posting: " + (c.quote || ""))}"><span class="k">Clearance</span>
+      <span class="v">${esc(v + (c.poly ? " + polygraph" : ""))}</span><span class="lvl">${esc(sub)}</span></div>`;
 }
 
 // New Grad / Junior / Mid Level ...: simplify.jobs tags, else the level read from the posting
@@ -733,24 +819,6 @@ function scorePanel(j) {
       <div class="sbar"><div class="fill" style="width:${Math.max(3, m.score)}%"></div></div>
       <span class="kw">${m.matched.length} of ${m.found} keywords</span></div>`;
 }
-// missing keywords are buttons: click = "I have this" for this job (counted in the score, added to this job's
-// tailored resume when it is in the apply queue - tailor.py); click a green + keyword again to take it back
-const EDIT_SKILLS = ["new", "selected", "skipped", "Needs approval", "Pending", "Candidate", "Approved", "Needs User"];
-function matchNote(j) {
-  const m = j.match;
-  if (!m || !((m.matched || []).length || (m.missing || []).length)) return "";
-  const edit = EDIT_SKILLS.includes(j.status), k = esc(j.key), added = new Set(m.added || []);
-  const own = (m.matched || []).filter(t => !added.has(t)).join(", ");
-  const plus = [...added].map(t => edit
-    ? `<button class="kwb added" data-act="unskill" data-key="${k}" data-name="${esc(t)}" aria-label="Remove ${esc(t)}" title="Added by you for this job's resume - click to remove">+ ${esc(t)}</button>`
-    : `<b>+ ${esc(t)}</b>`).join(" ");
-  const miss = (m.missing || []).map(t => edit
-    ? `<button class="kwb miss" data-act="skill" data-key="${k}" data-name="${esc(t)}" aria-label="I have ${esc(t)}" title="I have this skill - count it and add it to this job's resume">${esc(t)}</button>`
-    : esc(t)).join(edit ? " " : ", ");
-  const yes = [own && esc(own), plus].filter(Boolean).join(own && plus ? ", " : "");
-  return `<div class="matchnote">${yes ? `<span class="yes">✓ You have:</span> ${yes}` : ""}${yes && miss ? " · " : ""}`
-    + `${miss ? `<span class="no">✗ Missing${edit ? " (click the ones you have)" : ""}:</span> ${miss}` : ""}</div>`;
-}
 function resumeNote(j) {
   const r = j.resume, queued = j.status === "selected" || j.status === "applying";
   const added = (j.addedSkills || []).length;
@@ -760,6 +828,94 @@ function resumeNote(j) {
   if (r.status === "building") return `<div class="resumenote building">Resume: building the tailored copy (+ ${esc((r.added || []).join(", "))})…</div>`;
   if (r.status === "failed") return `<div class="resumenote failed">Resume: tailored copy failed - ${esc(r.note || "")} (the master resume will be used)</div>`;
   return `<div class="resumenote ready" title="${esc(r.pdf || "")}">Resume: tailored ✓ ${esc(r.note || "")} · ${esc(name)}</div>`;
+}
+
+// ---------- job card: header (company, title, posted) / fact chips / keyword sections / notes / actions ----------
+function initials(name) {
+  const w = (name || "?").replace(/[^A-Za-z0-9 ]/g, " ").trim().split(/\s+/);
+  return ((w[0] || "?")[0] + (w.length > 1 ? w[1][0] : "")).toUpperCase();
+}
+function logoColor(name) {  // a stable soft colour per company
+  let h = 0;
+  for (const c of name || "") h = (h * 31 + c.charCodeAt(0)) % 360;
+  return `hsl(${h} 55% 92%)`;
+}
+// small monochrome line icons for the fact chips (stroke = the chip's text colour)
+const ICON_PATHS = {
+  pin: '<path d="M12 21s-6-5.3-6-10a6 6 0 1 1 12 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/>',
+  pay: '<circle cx="12" cy="12" r="9"/><path d="M15 9.2c-.6-.9-1.7-1.4-3-1.4-1.7 0-3 .9-3 2.1 0 2.9 6 1.5 6 4.3 0 1.2-1.3 2.1-3 2.1-1.4 0-2.6-.6-3.1-1.6M12 6.3v1.5M12 16.3v1.4"/>',
+  work: '<rect x="4" y="3.5" width="16" height="17" rx="1.5"/><path d="M8.5 7.5h2M13.5 7.5h2M8.5 11.5h2M13.5 11.5h2M10 20.5v-4h4v4"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',
+  lock: '<rect x="5" y="10.5" width="14" height="10" rx="1.8"/><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7"/>',
+};
+function icon(name) {
+  return `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]}</svg>`;
+}
+// one row of facts, like simplify.jobs: location, pay, work mode, experience, clearance
+function factChips(j) {
+  const e = j.experience || {}, lim = state.expLimits || {};
+  const fit = e.years == null ? "" : e.years <= lim.max ? "ok" : e.years <= lim.stretchAt ? "warn" : "bad";
+  const fitText = { ok: "fits your range", warn: "stretch", bad: "too senior" }[fit] || "";
+  const chips = [];
+  const where = (j.location || "Location not given") + (j.checkLocation ? " (check)" : "");
+  chips.push(`<span class="chip" title="Location">${icon("pin")}${esc(where)}</span>`);
+  chips.push(j.salary ? `<span class="chip strong" title="Pay">${icon("pay")}${esc(j.salary)}</span>` : `<span class="chip muted" title="Pay">${icon("pay")}Pay not listed</span>`);
+  chips.push(j.workMode ? `<span class="chip" title="Work mode">${icon("work")}${esc(j.workMode)}</span>` : `<span class="chip muted" title="Work mode">${icon("work")}Work mode not stated</span>`);
+  chips.push(e.text ? `<span class="chip ${fit}" title="Required experience from the posting${fitText ? " - " + fitText : ""}">${icon("clock")}${esc(e.text)}${fitText ? ` · ${esc(fitText)}` : ""}</span>`
+    : `<span class="chip muted" title="The posting names no years">${icon("clock")}Experience not stated</span>`);
+  const c = j.clearance;
+  if (c) {
+    const kind = c.type ? ` ${c.type}` : "";
+    const [cls, v] = {
+      active: ["bad", `Active${kind} clearance required`], obtain: ["warn", `${c.type || "Clearance"} - able to obtain`],
+      "public trust": ["warn", "Public Trust"], mentioned: ["warn", `Mentions${kind || " a"} clearance`],
+    }[c.need] || ["", "Clearance"];
+    chips.push(`<span class="chip ${cls}" title="${esc("From the posting: " + (c.quote || ""))}">${icon("lock")}${esc(v + (c.poly ? " + polygraph" : ""))}</span>`);
+  } else chips.push(`<span class="chip muted" title="The posting doesn't mention a security clearance">${icon("lock")}No clearance mentioned</span>`);
+  return `<div class="chips">${chips.join("")}</div>`;
+}
+// keywords: what you have (chips) and what's missing (a list with explanations, click the ones you have)
+const EDIT_SKILLS = ["new", "selected", "skipped", "Needs approval", "Pending", "Candidate", "Approved", "Needs User"];
+function matchNote(j) {
+  const m = j.match;
+  if (!m || !((m.matched || []).length || (m.missing || []).length)) return "";
+  const edit = EDIT_SKILLS.includes(j.status), k = esc(j.key), added = new Set(m.added || []);
+  const own = (m.matched || []).filter(t => !added.has(t)).map(t => `<span class="kwchip">${esc(t)}</span>`);
+  const plus = [...added].map(t => edit
+    ? `<button class="kwb added" data-act="unskill" data-key="${k}" data-name="${esc(t)}" aria-label="Remove ${esc(t)}" title="Added by you for this job's resume - click to remove">+ ${esc(t)}</button>`
+    : `<span class="kwchip added">+ ${esc(t)}</span>`);
+  const ex = m.explain || {}, reqMiss = new Set(m.requiredMissing || []);
+  const items = (m.missing || []).map(t => {
+    const e = ex[t] || {}, name = esc(t);
+    const btn = edit
+      ? `<button class="kwb miss" data-act="skill" data-key="${k}" data-name="${name}" aria-label="I have ${name}" title="I have this skill - count it and add it to this job's resume">${name}</button>`
+      : `<span class="kwname">${name}</span>`;
+    const bits = [
+      e.what ? `<span class="what">${esc(e.what)}</span>` : `<span class="aka">skill from the posting's skill list</span>`,
+      e.aka ? `<span class="aka">also: ${esc(e.aka)}</span>` : "",
+      (e.similar || []).length ? `<span class="sim">you have ${esc(e.similar.join(", "))} - similar</span>` : "",
+    ].filter(Boolean).join(" · ");
+    return `<li>${btn}${reqMiss.has(t) ? `<span class="req" title="In the required / main part of the post">required</span>` : ""}<span class="expl">${bits}</span></li>`;
+  }).join("");
+  const have = [...plus, ...own];
+  return `<div class="kwgrid"><section class="csec have">
+      <h4>✓ On your resume <span class="cnt">${have.length}</span></h4>
+      ${have.length ? `<div class="kwrow">${have.join("")}</div>` : `<div class="none">None of this post's keywords yet</div>`}
+    </section>`
+    + (items ? `<section class="csec miss">
+      <h4>✗ Missing <span class="cnt">${(m.missing || []).length}</span>${edit ? `<span class="hint">click the ones you have used, even under another name</span>` : ""}</h4>
+      <ul class="misslist">${items}</ul></section>` : `<section class="csec miss"><h4>✗ Missing <span class="cnt">0</span></h4><div class="none">Nothing missing</div></section>`)
+    + `</div>`;
+}
+function cardNotes(j) {
+  const s = j.status, out = [];
+  const r = resumeNote(j);
+  if (r) out.push(r);
+  if ((j.flags || []).length)
+    out.push(`<div class="note warn">⚠ Fails filter: ${esc(j.flags.map(f => (state.filters.find(x => x.id === f) || { label: f }).label).join(" · "))}</div>`);
+  if (j.logNotes)
+    out.push(`<div class="note ${s === "Needs User" ? "warn" : ""}">${s === "Needs User" ? "👉 Needs you" : "📝 Log"} (${esc(j.logDate)}): ${esc(j.logNotes)}</div>`);
+  return out.length ? `<div class="cnotes">${out.join("")}</div>` : "";
 }
 
 function card(j) {
@@ -779,32 +935,27 @@ function card(j) {
   }
   if (s === "Needs User")  // back to the end of the apply queue; Claude continues in the tab it left open
     buttons.push(`<button data-act="continue" data-key="${k}" title="Back to the end of the apply queue - Claude finishes it in the tab it left open">Continue application</button>`);
-  if (posting) buttons.push(`<a href="${esc(posting)}" target="_blank" rel="noopener noreferrer">Open posting ↗</a>`);
-  if (applyUrl && applyUrl !== posting) buttons.push(`<a href="${esc(applyUrl)}" target="_blank" rel="noopener noreferrer">Apply page ↗</a>`);
-  const via = j.direct === false && j.publisher ? `via ${esc(j.publisher)}` : "";
+  const links = [];
+  if (posting) links.push(`<a href="${esc(posting)}" target="_blank" rel="noopener noreferrer">Open posting ↗</a>`);
+  if (applyUrl && applyUrl !== posting) links.push(`<a href="${esc(applyUrl)}" target="_blank" rel="noopener noreferrer">Apply page ↗</a>`);
+  const via = j.direct === false && j.publisher ? ` · via ${esc(j.publisher)}` : "";
   return `
     <article class="card ${s === "selected" || s === "applying" ? "selected" : ""}">
-      <input type="checkbox" data-check="${k}" aria-label="Check ${esc(j.title)}" ${state.checked.has(j.key) ? "checked" : ""} ${canChoose ? "" : "disabled"}>
-      <div class="body">
-        <div class="row">
+      <div class="chead">
+        <input type="checkbox" data-check="${k}" aria-label="Check ${esc(j.title)}" ${state.checked.has(j.key) ? "checked" : ""} ${canChoose ? "" : "disabled"}>
+        <div class="logo" style="background:${logoColor(j.company)}" aria-hidden="true">${esc(initials(j.company))}</div>
+        <div class="who">
+          <div class="co"><b>${esc(j.company)}</b>${j.companySize ? ` · ${esc(j.companySize)} employees` : ""}</div>
           ${posting ? `<a class="title" href="${esc(posting)}" target="_blank" rel="noopener noreferrer">${esc(j.title)}</a>` : `<span class="title">${esc(j.title)}</span>`}
-          ${levelBadges(j)}
-          <span class="pill ${pillClass(s)}">${esc(pillText(s))}</span>
+          <div class="meta"><span class="pill ${pillClass(s)}">${esc(pillText(s))}</span>${levelBadges(j)}
+            <span>${esc(ago(j.posted))}</span><span>· ${esc(j.source)}${via}</span></div>
         </div>
-        <div class="sub">
-          <span><b>${esc(j.company)}</b>${j.companySize ? ` · ${esc(j.companySize)} employees` : ""}</span>
-          <span>${esc(j.location || "location not given")}${j.remote ? " · remote" : ""}${j.checkLocation ? " · check location" : ""}</span>
-          <span>${esc(ago(j.posted))}</span>
-          <span>${esc(j.source)}${via ? " · " + via : ""}</span>
-        </div>
-        ${facts(j)}
-        ${matchNote(j)}
-        ${resumeNote(j)}
-        ${(j.flags || []).length ? `<div class="flagnote">Fails filter: ${esc(j.flags.map(f => (state.filters.find(x => x.id === f) || { label: f }).label).join(" · "))}</div>` : ""}
-        ${j.logNotes ? `<div class="lognote">${s === "Needs User" ? "Needs you" : "Log"} (${esc(j.logDate)}): ${esc(j.logNotes)}</div>` : ""}
-        <div class="actions">${buttons.join("")}</div>
+        ${scorePanel(j)}
       </div>
-      ${scorePanel(j)}
+      ${factChips(j)}
+      ${matchNote(j)}
+      ${cardNotes(j)}
+      <div class="actions">${buttons.join("")}<span class="links">${links.join("")}</span></div>
     </article>`;
 }
 

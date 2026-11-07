@@ -325,7 +325,7 @@ server.tool(
 
 server.tool(
   "upload_file",
-  "Attach local file(s) to an <input type=file> by ref, without opening the file picker.",
+  "Attach local file(s) by ref without an OS dialog: an <input type=file> is set directly; a 'Choose File' button / drop zone is clicked and the file chooser it opens is intercepted and filled.",
   { tabId, ref, paths: z.array(z.string()).describe("Absolute local file paths") },
   async (a) => run("upload_file", a)
 );

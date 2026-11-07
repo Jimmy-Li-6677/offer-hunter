@@ -134,7 +134,15 @@ chrome.storage.onChanged.addListener(async (changes) => {
 chrome.debugger.onDetach.addListener((source) => attachedTabs.delete(source.tabId));
 // "Leave site? Changes you made may not be saved" prompts on Claude's tabs: accept them so navigation continues
 // (the application progress is saved server-side by the ATS). Other dialogs (alert/confirm/prompt) are left alone.
+// File pickers opened by a page button (no <input type=file> to target, e.g. Apple's "Choose File"): upload_file turns
+// on Page.setInterceptFileChooserDialog, clicks the button and fills the intercepted chooser - no OS dialog appears.
+const pendingChoosers = new Map();  // tabId -> resolve(params)
 chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (method === "Page.fileChooserOpened" && pendingChoosers.has(source.tabId)) {
+    pendingChoosers.get(source.tabId)(params);
+    pendingChoosers.delete(source.tabId);
+    return;
+  }
   if (method === "Page.javascriptDialogOpening" && params?.type === "beforeunload" && source.tabId !== undefined) {
     chrome.debugger.sendCommand({ tabId: source.tabId }, "Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
   }
@@ -887,6 +895,29 @@ async function handleCommand(cmd, a) {
       });
       const objectId = res.result?.objectId;
       if (!objectId) throw new Error(`Element ${a.ref} not found`);
+      const isInput = await cdp(a.tabId, "Runtime.callFunctionOn", {
+        objectId, returnByValue: true,
+        functionDeclaration: "function () { return this.tagName === 'INPUT' && (this.type || '').toLowerCase() === 'file'; }"
+      });
+      if (!isInput.result?.value) {
+        // a "Choose File" button / drop zone: intercept the file chooser it opens and fill that instead
+        await cdp(a.tabId, "Page.setInterceptFileChooserDialog", { enabled: true });
+        try {
+          const opened = new Promise((resolve, reject) => {
+            pendingChoosers.set(a.tabId, resolve);
+            setTimeout(() => { pendingChoosers.delete(a.tabId); reject(new Error(
+              `Clicking ${a.ref} opened no file chooser within 8 s - read_page for an input:file and use its ref`)); }, 8000);
+          });
+          const c = await settledCenter(a.tabId, a.ref);
+          if (!c) throw new Error(`Element ${a.ref} not found`);
+          await mouseClick(a.tabId, c.x, c.y);
+          const chooser = await opened;
+          await cdp(a.tabId, "DOM.setFileInputFiles", { backendNodeId: chooser.backendNodeId, files: a.paths });
+        } finally {
+          await cdp(a.tabId, "Page.setInterceptFileChooserDialog", { enabled: false }).catch(() => {});
+        }
+        return `attached via the page's file chooser: ${a.paths.join(", ")} (verify on page)`;
+      }
       await cdp(a.tabId, "DOM.setFileInputFiles", { objectId, files: a.paths });
       const names = await evalInPage(a.tabId, pageReadValue, { ref: a.ref });
       return `attached: ${a.paths.join(", ")} ${names ? "" : "(verify on page)"}`.trim();
