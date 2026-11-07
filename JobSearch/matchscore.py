@@ -3,13 +3,17 @@
 Score = how many of the job's qualification keywords your resume has:
     matched keywords / keywords found in the post  (shown as e.g. "78% - 7/9 keywords")
 Keywords are the tech terms of the VOCAB list below (about 200, specific: Lambda / S3 / DynamoDB are separate from
-AWS) found in the job title + description - the required qualifications and the desired / preferred qualifications
-alike, so more matches = higher score - plus Simplify's own skill list for jobs that came from Simplify
-(job["simplifySkills"], read from the simplify.jobs page). Nothing else counts: experience, level, location and pay
+AWS) found in the job title and the posting's Minimum / Required Qualifications and Preferred Qualifications sections
+(user 2026-11-06: responsibilities, the company blurb and benefits do not count) - so more matches = higher score -
+plus the skills on Simplify's own skill list that those qualifications name (job["simplifySkills"]). Nothing else counts: experience, level, location and pay
 stay on the card for you to judge.
 
-Your keywords come from ../private/resume.json (skills lists, job bullets, projects). Add a term to VOCAB to have it
-recognised in both your resume and job posts.
+Beyond VOCAB, the skill bank (skillbank.py: about 4,000 tools / languages / platforms from O*NET and Stack Overflow
+with their other names, plus every skill Simplify tags) is matched too, and so is every item of your resume's skills
+lists - so a keyword counts however the post words it ("Postgres" / "PostgreSQL", "k8s" / "Kubernetes").
+
+Your keywords come from ../private/resume.json (skills lists, job bullets, projects). Add a term to VOCAB to give it a
+careful pattern of its own (VOCAB wins over the bank).
 
   python matchscore.py            -> every board job's score, best first
   python matchscore.py --profile  -> the keywords read from your resume
@@ -22,6 +26,7 @@ import sys
 import applog  # same folder: paths
 import glossary  # same folder: what each keyword means (the card's Missing list)
 import jobinfo  # same folder: where a post's "preferred / nice to have" part starts
+import skillbank  # same folder: thousands more skills + their other names (O*NET, Stack Overflow, Simplify)
 
 RESUME = applog.PRIVATE / "resume.json"
 
@@ -149,8 +154,21 @@ def _terms(text):
     return frozenset(name for name, rx in _RX.items() if rx.search(text))
 
 
+def _own_items(listed):
+    """{key: name} for resume skills items that neither VOCAB nor the bank knows (e.g. 'Hangfire'), so a post that
+    names one counts it as a keyword you have."""
+    index, _ = skillbank.load()
+    out = {}
+    for x in listed:
+        name = str(x).strip()
+        k = skillbank.key_of(name)
+        if k and len(k) >= 2 and not terms(name) and k not in index and k.replace(" ", "") not in index:
+            out[k] = name
+    return out
+
+
 def profile(resume=None):
-    """Your keywords: vocabulary terms in resume.json (skills lists, job + project bullets, summary)."""
+    """Your keywords: vocabulary + skill bank terms in resume.json (skills lists, job + project bullets, summary)."""
     if resume is None:
         try:
             resume = json.loads(RESUME.read_text(encoding="utf-8"))
@@ -173,7 +191,19 @@ def profile(resume=None):
             break
         skills |= more
     text = "\n".join(map(str, listed + parts))  # for keywords outside VOCAB (e.g. from Simplify's skill list)
-    return {"skills": skills, "text": text}
+    own = _own_items(listed)
+    skills |= skillbank.find(text, own) | set(own.values())
+    return {"skills": skills, "text": text, "own": own}
+
+
+def keywords(text, prof=None, company=""):
+    """Every keyword in a text: VOCAB terms + skill bank terms + your own resume skill items, without the hiring
+    company's own name (a Fortinet post naming "Fortinet" is not a skill)."""
+    found = terms(text) | skillbank.find(text, (prof or {}).get("own"))
+    ck = skillbank.norm(company)
+    if ck:
+        found = {t for t in found if t in VOCAB or skillbank.norm(t) not in ck}
+    return found
 
 
 _SIMPLIFY_PARTS = re.compile(r"\bRequirements: (?P<req>.*?)(?: Preferred: (?P<pref>.*?))?(?: Description: (?P<desc>.*))?$", re.S)
@@ -194,15 +224,85 @@ def _cut(text):
     return (text[:m.start()], text[m.start():]) if m else (text, "")
 
 
+# ---------- which part of a posting counts: its Minimum / Required and Preferred Qualifications sections ----------
+_Q = r"(?:qualifications?|requirements?|skills|experience)"
+# headings, in order of precedence; case-insensitive phrases, plus a few bare words that must be capitalised (a heading,
+# not a word in a sentence)
+_HEADINGS = [
+    ("pref", re.compile(r"\b(?:preferred|desired|desirable|additional|bonus|nice[- ]to[- ]have|plus)\s+" + _Q + r"\b|"
+                        r"\bnice[- ]to[- ]haves?\b|\bbonus points\b|\bit'?s a plus\b|\b(?:experience|skills) that would be helpful\b|"
+                        r"\bwhat will help you (?:thrive|stand out)\b|\bways to stand out\b|\bstand out from the crowd\b|\bpluses\b|\bwe(?:'d| would) love\b", re.I)),
+    ("req", re.compile(r"\b(?:minimum|basic|required|must[- ]have|key|core|job|position)\s+" + _Q + r"\b|"
+                       r"\bwhat you(?:'|’)?ll (?:bring|need)\b|\bwhat you(?:'|’)?ve done\b|\bwhat we(?:'|’)?re looking for\b|"
+                       r"\bwho you are\b|\bwh(?:o|at) we are looking for\b|\bwhat you need to be successful\b|\bminimum education and experience\b|\bskills required\b|\byou will be a great fit if\b|\bwho we(?:'|’)?re looking for\b|\bwhat you bring\b|\byou might thrive in this role if\b|\bwhat we need to see\b|\bwhat you need to (?:have|succeed)\b|\byou (?:have|bring|will have|should have)\s*:|\brequired education\b|"
+                       r"\babout you\b|\byour (?:background|experience|skills)\s*:", re.I)),
+    ("pref", re.compile(r"(?-i:\b(?:Preferred|PREFERRED)(?=\s*[:;]))")),
+    ("req", re.compile(r"(?-i:(?<!Travel )(?<!Physical )(?<!Authorization )(?<!Program )(?<!Work )"
+                       r"\b(?:Qualifications|Requirements|QUALIFICATIONS|REQUIREMENTS)\b)")),
+    # section ends: only at the start of a line / list item (after ; . : ! ? or the text start, at most one word such as
+    # "Key" before), never mid-sentence ("work with the team" must not end a section)
+    ("other", re.compile(r"(?:^|[;.:!?]\s*)(?:[A-Za-z]+ )?(?:responsibilities|what you(?:'|’)?ll do|what you will do|what you(?:'|’)?ll get to do|what you get to do|what you(?:'|’)?ll be doing|how you(?:'|’)?ll make an impact|how you will make an impact|key duties|essential (?:job )?duties|"
+                         r"day[- ]to[- ]day|about (?:the|us|our)\b|the (?:role|team|opportunity)\s*[:;]|benefits|perks|"
+                         r"what we offer|compensation|pay (?:range|transparency)|salary range|base pay|equal (?:employment )?opportunity|"
+                         r"why (?:join|you'll love)|life at|our (?:team|mission|culture)|location\s*:|"
+                         r"what you(?:'|’)?ll (?:learn|gain|get)|what we provide|why work|how to apply|apply for this job|"
+                         r"additional information|job description|overview)\b", re.I)),
+]
+
+
+def qual_sections(text):
+    """(required qualifications text, preferred qualifications text) found under the posting's own headings, or
+    ('', '') when it has none. A section runs from its heading to the next heading of any kind."""
+    marks = []
+    for kind, rx in _HEADINGS:
+        for m in rx.finditer(text or ""):
+            if not any(m.start() < e and m.end() > b for b, e, _ in marks):  # overlapping headings: first pattern wins
+                marks.append((m.start(), m.end(), kind))
+    marks.sort()
+    req, pref = [], []
+    for i, (start, end, kind) in enumerate(marks):
+        stop = marks[i + 1][0] if i + 1 < len(marks) else len(text)
+        part = text[end:stop]
+        if kind == "req":
+            req.append(part)
+        elif kind == "pref":
+            pref.append(part)
+    return " ".join(req), " ".join(pref)
+
+
+# the labels simplifysite writes ('... Requirements: ... . Preferred: ...'), only after a sentence break, so a posting's
+# own "Program Requirements:" heading is not taken for one
+_LABELS = re.compile(r"(?:^|(?<=[.;\]]) )(Requirements|Preferred|Responsibilities|Skills|Description): ")
+
+
 def split_text(desc):
-    """(required text, desired text). Simplify jobs are saved as 'Requirements: ... Preferred: ... Description: <whole
-    posting>': Simplify's two lists plus the posting's own required / preferred sections; other jobs are cut at the
-    first 'preferred / desired / nice to have'."""
-    m = _SIMPLIFY_PARTS.search(desc)
-    if not m:
-        return _cut(desc)
-    post_req, post_pref = _cut(m["desc"] or "")
-    return f'{m["req"]} {post_req}', f'{m["pref"] or ""} {post_pref}'
+    """(required text, desired text) the match score reads: only the job's qualifications.
+    - Simplify / company-page jobs are saved as 'Requirements: ... Preferred: ... [Responsibilities: ...] [Skills: ...]
+      Description: <whole posting>': Simplify's two lists (pulled from the posting's Minimum / Preferred Qualifications)
+      plus the qualification sections found under the posting's own headings. Responsibilities, the company blurb,
+      benefits and the rest of the description do not count.
+    - Other jobs (Google / LinkedIn: 'Required: ... Preferred: ...'): their qualification sections; when the text has
+      no such headings at all, the whole text cut at the first 'preferred / desired' (the older short summaries)."""
+    desc = desc or ""
+    parts = {}
+    labels = list(_LABELS.finditer(desc))
+    for i, m in enumerate(labels):
+        stop = labels[i + 1].start() if i + 1 < len(labels) else len(desc)
+        parts.setdefault(m.group(1), desc[m.end():stop])
+    if "Requirements" in parts or "Preferred" in parts:
+        post_req, post_pref = qual_sections(parts.get("Description", ""))
+        req_part, pref_part = parts.get("Requirements", ""), parts.get("Preferred", "")
+        cut = _HEADINGS[0][1].search(req_part)  # a company's qualifications field often holds both lists
+        if cut:
+            req_part, pref_part = req_part[:cut.start()], f"{req_part[cut.end():]} {pref_part}"
+        return f"{req_part} {post_req}", f"{pref_part} {post_pref}"
+    post_req, post_pref = qual_sections(desc)
+    if post_req.strip():  # a required-qualifications heading was found (a lone "nice to have" mid-summary is not enough)
+        return post_req, post_pref
+    head = re.match(r"\s*Required:\s*(.*?)(?:\s+Preferred:\s*(.*))?$", desc, re.S)
+    if head:
+        return head.group(1), head.group(2) or ""
+    return _cut(desc)
 
 
 def score(j, prof):
@@ -210,13 +310,18 @@ def score(j, prof):
     user marked them on the card), 'found', 'required': [have, of], 'desired': [have, of]} - matched / missing in the post's order (required part first)."""
     title, desc = j.get("title") or "", j.get("description") or ""
     req_text, des_text = split_text(desc)
-    required = terms(title) | terms(req_text)
-    desired = terms(des_text) - required
+    co = j.get("company") or ""
+    required = keywords(title, prof, co) | keywords(req_text, prof, co)
+    desired = keywords(des_text, prof, co) - required
     # Simplify's own skill list for the job (simplify.jobs page, when the job came from Simplify): each name is
     # mapped onto VOCAB; a name VOCAB doesn't know counts as its own keyword, matched literally in your resume text
     have = set(prof["skills"])
+    qual_text = f"{req_text} {des_text}"
     for name in j.get("simplifySkills") or []:
-        canon = terms(name)
+        # Simplify tags skills from the whole posting: only those the qualifications themselves name count
+        if not re.search(rf"(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])", qual_text, re.I) and not (terms(name) & terms(qual_text)):
+            continue
+        canon = terms(name) or skillbank.find(name)
         if canon:
             required |= canon - desired
         elif name and name not in required:
@@ -238,8 +343,19 @@ def score(j, prof):
     return {"score": value, "label": label, "matched": matched, "missing": missing, "added": added, "found": len(found),
             "required": [len(required & have), len(required)], "desired": [len(desired & have), len(desired)],
             # what each missing keyword is + similar skills already on the resume (glossary.py, for the card's list)
-            "explain": {t: glossary.explain(t, have) for t in missing},
+            "explain": {t: _explain(t, have) for t in missing},
             "requiredMissing": [t for t in missing if t in required]}
+
+
+def _explain(keyword, have):
+    """glossary.explain for VOCAB keywords; the skill bank's description / other names for the rest."""
+    e = glossary.explain(keyword, have)
+    if not e["what"]:
+        b = skillbank.info(keyword)
+        if b:
+            e["what"] = b.get("what") or ""
+            e["aka"] = e["aka"] or ", ".join(b.get("aka", [])[:4])
+    return e
 
 
 def main(argv):

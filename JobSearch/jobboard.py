@@ -317,8 +317,9 @@ def reorder(board, keys):
 
 
 # ---------- search requests (the page's search buttons; Claude does the search in Chrome) ----------
-SEARCH_SOURCES = {"google": "Google Jobs", "linkedin": "LinkedIn", "simplify": "SimplifyJobs", "simplifysite": "Simplify website"}
-SELF_SEARCH = {"simplify", "simplifysite"}  # searched by this server itself (simplifyjobs.py / simplifysite.py), not by Claude in Chrome
+SEARCH_SOURCES = {"google": "Google Jobs", "linkedin": "LinkedIn", "simplify": "SimplifyJobs", "simplifysite": "Simplify website",
+                  "company": "company career sites"}
+SELF_SEARCH = {"simplify", "simplifysite", "company"}  # searched by this server itself (simplifyjobs.py / simplifysite.py), not by Claude in Chrome
 OPEN_SEARCH = ("requested", "running")
 
 
@@ -353,6 +354,26 @@ def run_simplify(sid):
             set_search(board, sid, "done", note=f"SimplifyJobs new-grad list, last {hours:g}h (widen step {step})", found=n)
             save_board(board)
     except Exception as e:  # network / format errors: show them on the page
+        with LOCK:
+            board = load_board()
+            set_search(board, sid, "failed", note=f"{type(e).__name__}: {e}")
+            save_board(board)
+
+
+def run_company(sid):
+    """Background thread for the "Search company sites" button: ask every company in companyJobs.companies (Fortune 500 /
+    large employers) for new jobs through their careers sites' public job APIs (companyjobs.py) and add candidates."""
+    import companyjobs  # same folder
+    try:
+        with LOCK:
+            board_jobs = known_jobs(load_board())
+        jobs, note = companyjobs.run(board_jobs)
+        with LOCK:
+            board = load_board()
+            n = merge(board, jobs)
+            set_search(board, sid, "done", note=note, found=n)
+            save_board(board)
+    except Exception as e:  # network / config errors: show them on the page
         with LOCK:
             board = load_board()
             set_search(board, sid, "failed", note=f"{type(e).__name__}: {e}")
@@ -624,10 +645,27 @@ class Handler(BaseHTTPRequestHandler):
                 save_board(board)
             if r and r["source"] in SELF_SEARCH:
                 args = (r["id"], opts) if r["source"] == "simplifysite" else (r["id"],)
-                target = run_simplify_site if r["source"] == "simplifysite" else run_simplify
+                target = {"simplifysite": run_simplify_site, "company": run_company}.get(r["source"], run_simplify)
                 threading.Thread(target=target, args=args, daemon=True).start()
             return self.send(200, view(board))
         self.send(404, {"error": "not found"})
+
+
+def ensure_skillbank(max_age_days=30):
+    """Build the keyword skill bank (skillbank.py) when it is missing or older than a month - in the background, so
+    the page opens right away (scores use the hand-written keywords until it is ready)."""
+    import time
+    import skillbank  # same folder
+    try:
+        fresh = skillbank.RAW.exists() and time.time() - skillbank.RAW.stat().st_mtime < max_age_days * 86400
+        if skillbank.CACHE.exists() and fresh:
+            return
+        board = load_board()
+        texts = [f'{j.get("title", "")}. {j.get("description", "")}' for j in board["jobs"].values()]
+        learned = [x for j in board["jobs"].values() for x in j.get("simplifySkills") or []]
+        skillbank.build(texts, learned, fresh=not fresh)
+    except Exception as e:  # never stop the board over the bank
+        print(f"skill bank not built: {e}")
 
 
 def serve(open_browser=True):
@@ -641,6 +679,7 @@ def serve(open_browser=True):
             webbrowser.open(url)
         return
     print(f"Job board: {url}  (Ctrl+C to stop)")
+    threading.Thread(target=ensure_skillbank, daemon=True).start()
     if open_browser:
         threading.Timer(0.5, webbrowser.open, [url]).start()
     try:

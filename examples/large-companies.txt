@@ -1,0 +1,417 @@
+# Large US employers (Fortune 500 and other companies with roughly 10,000+ employees) for the "Search company sites"
+# button. Find their job boards and add them to companyJobs.companies in private/job-search-config.json with:
+#   python companyjobs.py --discover-file ../examples/large-companies.txt --employees 10,001+ --write
+# One company a line:  Name | board / Workday tenant names to try (optional) | employees (optional)
+# A company that isn't found uses a site we can't read automatically: add it from one of its job links with
+#   python companyjobs.py --add "<job link>" --name "Company" --write
+
+# Tech, semiconductors, software
+Apple
+Google | google,alphabet
+Meta | meta,facebook
+Oracle
+IBM
+Dell Technologies | dell,delltechnologies
+Qualcomm
+Texas Instruments | ti,texasinstruments
+AMD | amd
+Western Digital | wdc,westerndigital
+Seagate | seagate,seagatetechnology
+NetApp
+Juniper Networks | juniper,junipernetworks
+Arista Networks | arista,aristanetworks
+Palo Alto Networks | paloaltonetworks,pan
+Fortinet
+ServiceNow
+Splunk
+VMware
+Red Hat | redhat
+Uber
+Tesla
+Rivian
+Lucid Motors | lucid,lucidmotors
+SpaceX
+Intuit
+Autodesk
+Electronic Arts | ea,electronicarts
+Activision Blizzard | activision,activisionblizzard
+Take-Two Interactive | taketwo,take2games
+Snap | snap,snapchat
+LinkedIn
+Booking Holdings | booking,bookingholdings
+Zillow
+Wayfair
+Chewy
+Lumen Technologies | lumen
+Charter Communications | charter,spectrum
+Comcast
+Cox Enterprises | cox,coxenterprises
+EchoStar | echostar,dish
+Garmin
+Zebra Technologies | zebra
+Keysight Technologies | keysight
+Teradyne
+Lam Research | lamresearch,lam
+Marvell Technology | marvell
+Synopsys
+Cadence Design Systems | cadence
+Ansys
+Gen Digital | gen,gendigital,nortonlifelock
+Akamai
+Equinix
+Digital Realty | digitalrealty
+CDW
+Insight Enterprises | insight
+Cognizant
+Infosys
+Tata Consultancy Services | tcs
+Wipro
+HCLTech | hcl,hcltech
+Capgemini
+EPAM Systems | epam
+Genpact
+DXC Technology | dxc
+Kyndryl
+Unisys
+Conduent
+Gartner
+Epic Systems | epic,epicsystems
+Veeva Systems | veeva
+SAP
+Siemens
+Bosch | bosch,boschgroup
+Philips
+GE Aerospace | ge,geaerospace
+GE Vernova | gevernova
+GE HealthCare | gehealthcare
+Honeywell
+Emerson | emerson
+Rockwell Automation | rockwellautomation,rockwell
+Johnson Controls | jci,johnsoncontrols
+Carrier | carrier
+Otis | otis
+Trane Technologies | trane,tranetechnologies
+Eaton
+ABB
+Schneider Electric | schneiderelectric,se
+Netflix
+Spotify
+Sony
+Warner Bros. Discovery | wbd,warnerbros
+Paramount
+Hasbro
+Mattel
+
+# Defense, aerospace, government services
+Lockheed Martin | lmco,lockheedmartin,lockheed
+General Dynamics | gd,gdms,gdeb,generaldynamics
+L3Harris | l3harris,harris
+BAE Systems | baesystems,bae,baesystemsinc
+Huntington Ingalls Industries | hii,huntingtoningalls
+Textron
+Peraton
+ManTech | mantech
+MITRE | mitre
+SAIC | saic
+Maximus
+V2X | v2x,vectrus
+CAE | cae
+Jacobs | jacobs
+AECOM
+Fluor
+Bechtel
+Battelle
+Johns Hopkins APL | jhuapl,jhu
+Sandia National Laboratories | sandia
+Lawrence Livermore National Laboratory | llnl
+Los Alamos National Laboratory | lanl
+NASA JPL | jpl
+
+# Banks, finance, insurance, payments
+Goldman Sachs | gs,goldmansachs
+Citi | citi,citigroup
+Wells Fargo | wf,wellsfargo
+American Express | aexp,americanexpress,amex
+Discover | discover
+Charles Schwab | schwab,charlesschwab
+Vanguard
+BlackRock
+State Street | statestreet
+BNY | bny,bnymellon
+Northern Trust | northerntrust
+Raymond James | raymondjames
+Ameriprise Financial | ameriprise
+Edward Jones | edwardjones,jones
+LPL Financial | lpl
+Prudential | prudential
+MetLife
+AIG | aig
+Travelers | travelers
+Progressive | progressive
+Allstate
+Liberty Mutual | libertymutual,lmig
+Nationwide
+USAA | usaa
+Navy Federal Credit Union | navyfederal,nfcu
+State Farm | statefarm
+GEICO | geico
+Chubb
+The Hartford | thehartford,hartford
+Principal Financial | principal
+Lincoln Financial | lincolnfinancial,lfg
+Fiserv
+FIS | fis,fisglobal
+Global Payments | globalpayments,tsys
+Broadridge
+Intercontinental Exchange | ice,intercontinentalexchange
+Nasdaq
+CME Group | cmegroup,cme
+Citizens | citizens,citizensbank
+KeyCorp | key,keybank
+Fifth Third Bank | fifththird,53
+M&T Bank | mtb,mandtbank
+Huntington Bank | huntington,huntingtonbank
+Regions | regions
+Ally | ally
+Experian
+Moody's | moodys
+MSCI
+Paychex
+ADP | adp
+
+# Health, pharma, medical devices
+UnitedHealth Group | uhg,unitedhealth,optum
+Cigna | cigna,thecignagroup
+Centene
+Molina Healthcare | molina,molinahealthcare
+Kaiser Permanente | kp,kaiser,kaiserpermanente
+HCA Healthcare | hca,hcahealthcare
+McKesson
+Cardinal Health | cardinalhealth,cardinal
+Cencora | cencora,amerisourcebergen
+Abbott | abbott
+Merck | merck,msd
+Eli Lilly | lilly,elililly
+Bristol Myers Squibb | bms,bristolmyerssquibb
+AbbVie
+Gilead Sciences | gilead
+Regeneron
+Boston Scientific | bostonscientific,bsci
+Stryker
+Becton Dickinson | bd,bectondickinson
+Baxter
+Labcorp
+Quest Diagnostics | questdiagnostics,quest
+IQVIA
+Danaher
+Illumina
+
+# Retail, consumer, travel, transport, industrial, energy
+Costco
+Kroger
+Albertsons
+Walgreens
+Best Buy | bestbuy
+Macy's | macys
+Gap | gap,gapinc
+TJX | tjx
+Dollar General | dollargeneral,dg
+Dollar Tree | dollartree
+Starbucks
+McDonald's | mcdonalds
+Chipotle
+Yum! Brands | yum,yumbrands
+Marriott
+Hilton
+Hyatt
+Delta Air Lines | delta
+United Airlines | united,unitedairlines
+American Airlines | aa,americanairlines
+Southwest Airlines | southwest,swa
+Alaska Airlines | alaskaair,alaska
+FedEx
+UPS | ups
+Union Pacific | up,unionpacific
+CSX
+Norfolk Southern | nscorp,norfolksouthern
+Ford | ford
+Stellantis
+Toyota
+Honda
+Procter & Gamble | pg,proctergamble
+PepsiCo
+Coca-Cola | coca-cola,cocacola,coke
+Mondelez
+General Mills | generalmills
+Kellanova | kellanova,kellogg
+Kraft Heinz | kraftheinz
+Tyson Foods | tyson
+Lululemon
+Under Armour | underarmour
+Estee Lauder | elc,esteelauder
+Colgate-Palmolive | colgate
+Kimberly-Clark | kimberlyclark,kcc
+Sherwin-Williams | sherwin,sherwinwilliams
+Whirlpool
+John Deere | deere,johndeere
+Cummins
+PACCAR | paccar
+ExxonMobil | exxonmobil,exxon
+ConocoPhillips
+Phillips 66 | phillips66,p66
+Duke Energy | duke,dukeenergy
+Southern Company | southernco,southerncompany
+Dominion Energy | dominion,dominionenergy
+Exelon
+NextEra Energy | nextera,nexteraenergy
+PG&E | pge
+Edison International | edison,sce
+Xcel Energy | xcel,xcelenergy
+Waste Management | wm,wastemanagement
+Republic Services | republic,republicservices
+Cintas
+Sysco
+Aramark
+
+# Consulting and professional services
+Deloitte | deloitte,deloitteus
+EY | ey,ernstyoung
+KPMG | kpmg,kpmgus
+McKinsey | mckinsey
+Boston Consulting Group | bcg
+Bain & Company | bain
+Slalom
+
+# Other well-known tech employers (roughly 500-10,000 employees)
+Zscaler
+SentinelOne
+Confluent
+HashiCorp
+New Relic | newrelic
+Dynatrace
+PagerDuty
+Nutanix
+Pure Storage | purestorage
+Ciena
+F5 | f5,f5networks
+Trimble
+Teradata
+Informatica
+Alteryx
+DocuSign
+Box | box,boxinc
+Zendesk
+Workiva
+Smartsheet
+Tableau
+Avalara
+Remitly
+OfferUp
+Rover | rover,roverdotcom
+Redfin
+Carvana
+Opendoor
+Compass | compass,urbancompass
+Roku
+Sonos
+GoDaddy
+Wix | wix,wixcom
+Fastly
+RingCentral
+Five9
+Bandwidth
+Yelp
+Coursera
+Chegg
+Indeed
+ZipRecruiter
+Upwork
+StubHub
+SeatGeek
+Live Nation | livenation,ticketmaster
+Tripadvisor
+Marqeta
+Bill.com | bill,billcom
+Intapp
+Guidewire
+Tyler Technologies | tylertech,tyler
+Appian
+MicroStrategy | microstrategy,strategy
+Blackbaud
+Paycom
+Paylocity
+Dayforce | dayforce,ceridian
+Deel
+Navan
+Tempus | tempus,tempusai
+Flatiron Health | flatironhealth
+Oscar Health | oscar,oscarhealth
+Hims & Hers | hims,forhims
+Noom
+Calm
+Headspace
+Unity | unity,unity3d,unitytechnologies
+Niantic
+Scopely
+Bungie
+Valve
+Cvent
+Navient
+Anthology | anthology,blackboard
+Ibotta
+Guild | guild,guildeducation
+Ping Identity | pingidentity
+Vivid Seats | vividseats
+Healthgrades
+Zoominfo
+HubSpot | hubspot,hubspotjobs
+Atlassian | atlassian
+Grammarly
+Duolingo
+Asana
+Airtable
+Miro
+Canva
+Atlassian
+Notion
+Dropbox
+Instacart
+Gopuff
+Grubhub
+Toast
+Square | square,squareup
+Robinhood
+Plaid
+Chime
+SoFi
+Nerdwallet
+Credit Karma | creditkarma
+Intuit
+Okta
+1Password | 1password,agilebits
+Bitwarden
+Cloudflare
+Akamai
+Twilio
+Samsara
+Motive | motive,keeptruckin
+Flock Safety | flocksafety
+Axon
+Anduril | andurilindustries,anduril
+Shield AI | shieldai
+Palantir
+Rocket Lab | rocketlab
+Relativity Space | relativity
+Firefly Aerospace | firefly,fireflyspace
+Sierra Space | sierraspace
+Blue Origin | blueorigin
+Joby Aviation | joby,jobyaviation
+Archer Aviation | archer,archeraviation
+Zipline | zipline,flyzipline
+Skydio
+Aurora Innovation | aurora,aurorainnovation
+Applied Intuition | appliedintuition
+Waymo
+Cruise | cruise,getcruise
+Nuro
+Rivian
