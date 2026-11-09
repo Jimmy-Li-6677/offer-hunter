@@ -104,8 +104,10 @@
   .kwgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); border-top: 1px solid var(--line); }
   .kwgrid .csec { border-top: 0; padding: 8px 0 0; min-width: 0; }
   .kwgrid .csec.have { padding-right: 12px; }
-  .kwgrid .csec.miss { padding-left: 12px; border-left: 1px solid var(--line); }
-  @media (max-width: 900px) { .kwgrid { grid-template-columns: minmax(0, 1fr); } .kwgrid .csec.have { padding-right: 0; } .kwgrid .csec.miss { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); margin-top: 8px; } }
+  .kwgrid .missgroup { min-width: 0; padding-left: 12px; border-left: 1px solid var(--line); }
+  .kwgrid .missgroup .csec.miss + .csec.miss { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+  .kwgrid .csec.miss { padding-left: 0; }
+  @media (max-width: 900px) { .kwgrid { grid-template-columns: minmax(0, 1fr); } .kwgrid .csec.have { padding-right: 0; } .kwgrid .missgroup { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); margin-top: 8px; } }
   .csec h4 { margin: 0 0 6px; font-size: 13px; font-weight: 700; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
   .csec h4 .cnt { font-size: 11px; font-weight: 700; color: var(--muted); background: var(--gray-soft); border-radius: 999px; padding: 0 7px; }
   .csec h4 .hint { font-size: 11.5px; font-weight: 400; color: var(--muted); }
@@ -135,23 +137,23 @@
   .card > .actions .links { margin-left: auto; display: flex; gap: 12px; }
   @media (max-width: 560px) { .chead { grid-template-columns: auto auto minmax(0, 1fr); } .chead .score { grid-column: 1 / -1; width: auto; } }
   /* keyword match score panel (right side of each card) */
-  .score { align-self: start; width: 84px; border-radius: 12px; padding: 6px 6px 6px; text-align: center; border: 2px solid currentColor; cursor: help; }
-  .score .num { display: block; font-size: 26px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
-  .score .of { font-size: 13px; font-weight: 600; opacity: .75; }
-  .score .lbl { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
-  .score .sbar { display: block; height: 5px; border-radius: 99px; background: var(--line); margin: 4px 2px 3px; overflow: hidden; }
+  .score { align-self: start; width: auto; max-width: 150px; border-radius: 8px; padding: 3px 8px; text-align: center; border: 1.5px solid currentColor; cursor: help; white-space: nowrap; }
+  .score .num { display: inline; font-size: 16px; font-weight: 800; line-height: 1.2; letter-spacing: -.02em; }
+  .score .of { font-size: 11px; font-weight: 600; opacity: .75; }
+  .score .lbl { display: inline; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-left: 4px; }
+  .score .sbar { display: none; }
   .score .fill { display: block; height: 7px; border-radius: 99px; background: var(--muted); }
   .score.strong .fill { background: var(--ok); }
   .score.good .fill { background: var(--accent); }
   .score.fair .fill { background: var(--warn); }
   .score.low .fill { background: var(--bad); }
-  .score .kw { display: block; font-size: 11px; opacity: .85; }
+  .score .kw { display: block; font-size: 10.5px; opacity: .85; line-height: 1.3; }
   .score.strong { color: var(--ok); background: var(--ok-soft); }
   .score.good { color: var(--accent); background: var(--accent-soft); }
   .score.fair { color: var(--warn); background: var(--warn-soft); }
   .score.low { color: var(--bad); background: var(--bad-soft); }
   .score.none { color: var(--muted); background: var(--gray-soft); border-style: dashed; }
-  .score.none .num { font-size: 22px; }
+  .score.none .num { font-size: 16px; }
   @media (max-width: 560px) { .card { grid-template-columns: auto minmax(0, 1fr); } .score { grid-column: 2; width: auto; } }
   .card.selected { border-color: var(--accent); }
   .card .body { display: flex; flex-direction: column; min-width: 0; }  /* cards in a row share a height; buttons sit on the bottom line */
@@ -287,6 +289,9 @@
     <button class="primary" data-search="simplify" title="Adds about 10 new-grad jobs from the SimplifyJobs GitHub list (github.com/SimplifyJobs/New-Grad-Positions) that pass your search filters">Search SimplifyJobs</button>
     <button class="primary" data-search="company" title="Jobs straight from Fortune 500 / large companies' own career sites (Workday, Amazon, Microsoft, JPMorgan ...): the list is companyJobs in your config. No Claude needed, takes about a minute">Search company sites</button>
     <button class="primary" data-search="simplifysite" title="Search the simplify.jobs website: choose location, salary, work mode etc. and paste the page's X-TYPESENSE-API-KEY header">Search Simplify website</button>
+    <button id="mdlBtn" title="Choose which Claude model fills the application forms and revises the resume (cheaper models cost less per job)">AI model</button>
+    <button id="logBtn" title="What the scheduled search did: searches (how long, how many jobs), applications (when), and the estimated token cost of each">Activity log</button>
+    <button class="primary" id="schedBtn" title="Run the company-sites / SimplifyJobs / Simplify website searches again and again for a number of hours and put every new job that matches your resume well in the apply queue">Schedule</button>
   </div>
   <div class="bar" style="padding-top:0">
     <label class="sr" for="q">Search</label>
@@ -356,6 +361,7 @@
     <div id="notice" class="notice" hidden></div>
     <div id="error" class="error" role="alert" hidden></div>
     <div id="searchStatus" class="notice" hidden></div>
+    <div id="schedStatus" class="notice" hidden></div>
     <div class="bulk" id="bulk">
       <strong id="bulkN"></strong>
       <button id="bulkSelect" class="primary">Add to apply queue</button>
@@ -442,6 +448,79 @@
   </form>
 </dialog>
 
+<dialog id="mdlDlg" aria-labelledby="mdlTitle">
+  <form class="dlg" id="mdlForm" method="dialog">
+    <div class="dlg-head">
+      <h2 id="mdlTitle">AI model for applying</h2>
+      <p>Choose which Claude model does each part of a queue run: analyzing the posting, generating the tailored resume, and filling the forms. "Same as this session" uses the model the Claude session was started with; any other choice hands that part to a subagent on that model. Cheaper models cost less per job; stronger ones make fewer mistakes on unusual forms.</p>
+    </div>
+    <div class="dlg-body ss-grid" id="mdlBody"></div>
+    <div class="dlg-foot">
+      <span class="meta" id="mdlMsg" role="status"></span>
+      <button type="button" id="mdlClose">Cancel</button>
+      <button type="submit" class="primary" id="mdlGo">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="logDlg" aria-labelledby="logTitle">
+  <div class="dlg">
+    <div class="dlg-head">
+      <h2 id="logTitle">Scheduled search - activity log</h2>
+      <p id="logFile"></p>
+    </div>
+    <div class="dlg-body"><pre id="logText" style="white-space:pre-wrap;font-size:12px;margin:0"></pre></div>
+    <div class="dlg-foot"><span class="meta"></span><button type="button" id="logClose">Close</button></div>
+  </div>
+</dialog>
+
+<dialog id="schedDlg" aria-labelledby="schedTitle">
+  <form class="dlg" id="schedForm" method="dialog">
+    <div class="dlg-head">
+      <h2 id="schedTitle">Schedule searches + auto apply</h2>
+      <p>The job board repeats the searches you tick for the number of hours you choose. After every round, each new job that passes your search filters and whose keyword match is at least the minimum goes into the apply queue by itself. Claude applies to the queue while its job-search session is running.</p>
+    </div>
+    <div class="dlg-body ss-grid">
+      <span class="k">Searches</span>
+      <div>
+        <div class="ss-opts" id="schedSources">
+          <label><input type="checkbox" value="company" checked> Search company sites</label>
+          <label><input type="checkbox" value="simplify" checked> Search SimplifyJobs</label>
+          <label><input type="checkbox" value="simplifysite" checked> Search Simplify website</label>
+        </div>
+        <div class="ss-help">Simplify website uses the saved key and its default options (config: browserSearch.simplifySite). Paste a fresh key with that button first if the last search said the key was rejected.</div>
+      </div>
+      <label class="k" for="schedAge">Posted within</label>
+      <div>
+        <div class="ss-opts"><select id="schedAge"><option value="24">24 hours</option><option value="72">3 days</option><option value="168" selected>1 week</option></select></div>
+        <div class="ss-help">Jobs posted longer ago are not queued automatically (they stay on the board for you to review).</div>
+      </div>
+      <label class="k" for="schedHours">Run for</label>
+      <div class="ss-opts"><input type="number" id="schedHours" min="1" max="336" step="1" value="8" style="width:5em"> hours</div>
+      <label class="k" for="schedEvery">Repeat every</label>
+      <div class="ss-opts"><input type="number" id="schedEvery" min="10" max="1440" step="5" value="60" style="width:5em"> minutes</div>
+      <label class="k" for="schedScore">Auto apply at</label>
+      <div>
+        <div class="ss-opts"><input type="number" id="schedScore" min="1" max="100" step="1" value="75" style="width:5em"> % match or higher</div>
+        <div class="ss-help">Uses the basic match score: only the keywords the post lists as required / minimum qualifications. Preferred ("is a plus") keywords are the separate ★ stand-out score and are not counted. A keyword you don't have but have a similar skill for (e.g. Frontend when you have React) counts as a match. Jobs that fail a search filter (old, clearance, years, pay, staffing agency…) are never queued. At most 10 jobs per round.</div>
+      </div>
+      <span class="k">Extra AI check</span>
+      <div class="ss-opts">
+        <label><input type="checkbox" id="schedAnalyze"> Optional extra check: Claude reads each job post that scores high enough and checks the rules before it goes to the apply queue (off = queued by score and search filters; Claude then reads the post when it revises the resume)</label>
+      </div>
+      <span class="k">Auto apply</span>
+      <div class="ss-opts">
+        <label><input type="checkbox" id="schedQueue" checked> Add matching jobs to the apply queue (untick to only collect candidates)</label>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <span class="meta" id="schedMsg" role="status"></span>
+      <button type="button" id="schedClose">Cancel</button>
+      <button type="submit" class="primary" id="schedGo">Start schedule</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="ansDlg" aria-labelledby="ansTitle">
   <div class="dlg">
     <div class="dlg-head">
@@ -465,6 +544,7 @@ const GROUPS = [
   { id: "review", label: "To review", match: s => s === "new" },
   { id: "queue", label: "Apply queue", match: s => s === "selected" || s === "applying" },
   { id: "waiting", label: "Waiting on you", match: s => ["Needs User", "Needs approval", "Pending", "Candidate", "Approved"].includes(s) },
+  { id: "test", label: "Test", match: s => s === "Test" },
   { id: "done", label: "Submitted", match: s => s === "Submitted" },
   { id: "skipped", label: "Skipped", match: s => s === "skipped" || s === "Skipped" },
   { id: "all", label: "All", match: () => true },
@@ -531,7 +611,7 @@ function pillClass(s) {
   return "wait";
 }
 function pillText(s) {
-  return { new: "New", selected: "In queue", applying: "Applying now", skipped: "Skipped by you" }[s] || s;
+  return { new: "New", selected: "In queue", applying: "Applying now", skipped: "Skipped by you", Test: "Applied - in Test" }[s] || s;
 }
 
 async function api(path, body) {
@@ -555,6 +635,9 @@ function apply(data) {
   state.checked.forEach(k => { if (!keys.has(k)) state.checked.delete(k); });
   $("meta").textContent = `${state.jobs.length} jobs on the board`;
   showSearches(data.searchRequests || []);
+  showSchedule(data.schedule);
+  state.models = data.models; state.modelChoices = data.modelChoices; state.modelTasks = data.modelTasks;
+  { const ms = Object.values(data.models || {}), lab = (state.modelChoices || {})[ms[0]]; $("mdlBtn").textContent = lab ? "AI model: " + (ms.every(x => x === ms[0]) ? lab.split(" (")[0] : "mixed") : "AI model"; }
   state.profile = data.profileRequest || null;
   if ($("ansDlg").open && state.ansStep === "wait") showResumeWait();
   const every = data.queueCheckSeconds;
@@ -713,6 +796,98 @@ $("ssForm").addEventListener("submit", async ev => {
     $("ssStatus").textContent = e.message;
   }
 });
+
+// ---- Schedule: repeat the board-server searches for X hours and queue the jobs that match well ----
+function showSchedule(sch) {
+  const el = $("schedStatus");
+  state.schedule = sch || null;
+  $("schedBtn").textContent = sch && sch.active ? "Schedule (running)" : "Schedule";
+  if (!sch) { el.hidden = true; return; }
+  const t = x => new Date(x).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  let msg;
+  if (sch.active) {
+    msg = `Schedule running until ${t(sch.endsAt)}: ${sch.runs} rounds, ` +
+      (sch.analyze ? `${sch.toAnalyze || 0} jobs sent to Claude's analysis (${sch.minScore}%+ match)` : `${sch.queued} jobs queued at ${sch.minScore}%+ match`) + ". " +
+      (sch.running ? "Searching now…" : `Next round ${t(sch.nextRunAt)}.`) + (sch.note && !sch.running ? " Last: " + sch.note : "");
+  } else {
+    msg = `Schedule ${sch.note || "ended"}.` + (sch.runs ? ` ${sch.runs} rounds, ${sch.queued} jobs queued.` : "");
+  }
+  if (sch.lastQueued && sch.lastQueued.length) msg += (sch.lastWasAnalysis ? " Sent to analysis last round: " : " Queued last round: ") + sch.lastQueued.join("; ") + ".";
+  el.textContent = msg;
+  el.hidden = false;
+  let b = el.querySelector("button");
+  if (sch.active) {
+    b = document.createElement("button");
+    b.type = "button"; b.textContent = "Stop schedule"; b.style.marginLeft = "10px";
+    b.onclick = async () => { try { apply(await api("/api/schedule", { action: "stop" })); } catch (e) { showError("Could not stop the schedule: " + e.message); } };
+    el.appendChild(b);
+  }
+}
+$("schedBtn").onclick = () => {
+  const sch = state.schedule || {};
+  if (sch.sources) {
+    document.querySelectorAll("#schedSources input").forEach(c => { c.checked = sch.sources.includes(c.value); });
+    $("schedHours").value = sch.hours; $("schedEvery").value = sch.intervalMinutes;
+    $("schedScore").value = sch.minScore; $("schedAge").value = String(sch.maxAgeHours || 168); $("schedAnalyze").checked = sch.analyze === true; $("schedQueue").checked = sch.autoQueue !== false;
+  }
+  $("schedMsg").textContent = "";
+  $("schedGo").textContent = sch.active ? "Restart schedule" : "Start schedule";
+  $("schedGo").disabled = false;
+  $("schedDlg").showModal();
+};
+$("schedClose").onclick = () => $("schedDlg").close();
+$("schedForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const sources = checkedIn("schedSources");
+  if (!sources.length) { $("schedMsg").textContent = "Tick at least one search."; return; }
+  $("schedGo").disabled = true;
+  try {
+    apply(await api("/api/schedule", { sources, hours: Number($("schedHours").value), intervalMinutes: Number($("schedEvery").value),
+      minScore: Number($("schedScore").value), maxAgeHours: Number($("schedAge").value), analyze: $("schedAnalyze").checked, autoQueue: $("schedQueue").checked }));
+    showError("");
+    $("schedDlg").close();
+  } catch (e) { $("schedGo").disabled = false; $("schedMsg").textContent = e.message; }
+});
+
+// ---- AI model per task: which Claude model fills the forms / revises the resume ----
+function openModels() {
+  const m = state.models || {}, ch = state.modelChoices || {}, tasks = state.modelTasks || {};
+  if (!Object.keys(tasks).length) {  // an older job board server that does not know the model choices yet
+    $("mdlBody").innerHTML = '<p class="meta" style="grid-column:1/-1">This job board server was started before the AI model choices were added. Restart it (close its window and run StartJobSearch.exe again, or run: python jobboard.py) and reload this page.</p>';
+    $("mdlGo").disabled = true;
+    $("mdlDlg").showModal();
+    return;
+  }
+  $("mdlBody").innerHTML = Object.keys(tasks).map(t =>
+    `<span class="k">${esc(tasks[t])}</span><div class="ss-opts">` +
+    Object.keys(ch).map(v => `<label><input type="radio" name="mdl-${esc(t)}" value="${esc(v)}" ${m[t] === v ? "checked" : ""}> ${esc(ch[v])}</label>`).join("") +
+    "</div>").join("");
+  $("mdlMsg").textContent = "";
+  $("mdlGo").disabled = false;
+  $("mdlDlg").showModal();
+}
+$("mdlBtn").onclick = openModels;
+$("mdlClose").onclick = () => $("mdlDlg").close();
+$("mdlForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const body = {};
+  Object.keys(state.modelTasks || {}).forEach(t => { const c = document.querySelector(`input[name="mdl-${t}"]:checked`); if (c) body[t] = c.value; });
+  $("mdlGo").disabled = true;
+  try { apply(await api("/api/models", body)); showError(""); $("mdlDlg").close(); }
+  catch (e) { $("mdlGo").disabled = false; $("mdlMsg").textContent = e.message; }
+});
+
+// ---- Activity log: what the scheduled search did (searches, applications, estimated token cost) ----
+$("logBtn").onclick = async () => {
+  $("logText").textContent = "Loading…";
+  $("logDlg").showModal();
+  try {
+    const d = await api("/api/activitylog");
+    $("logText").textContent = d.text;
+    $("logFile").textContent = "Also saved as " + d.file + " (refreshed after every event).";
+  } catch (e) { $("logText").textContent = "Could not load the log: " + e.message + " (restart the job board server if it is an old one)"; }
+};
+$("logClose").onclick = () => $("logDlg").close();
 
 function filtered() {
   const g = GROUPS.find(x => x.id === state.tab);
@@ -894,13 +1069,15 @@ function scorePanel(j) {
     return `<div class="score none" title="No known tech keywords in this post's text (short or missing description) - open the posting to judge">
         <span class="num">–</span><span class="lbl">No score</span><span class="kw">no keywords</span></div>`;
   const r = m.required || [0, 0], d = m.desired || [0, 0];
-  const tip = `Match score ${m.score}/100: ${m.matched.length} of ${m.found} tech keywords in this post are on your resume `
-    + `(required / main part ${r[0]}/${r[1]}, desired / preferred part ${d[0]}/${d[1]})`;
+  const tip = `Basic qualifications ${m.score}/100: ${r[0]} of ${r[1]} required / minimum keywords in this post are on your resume. `
+    + `Stand-out (preferred / "is a plus") keywords: ${d[0]} of ${d[1]}${m.prefScore != null ? " = " + m.prefScore + "%" : ""}. The Schedule queues a job when the basic score (with similar skills) reaches the minimum. `
+    + `Card line: req = required keywords you have, ★ = stand-out %, ≈ = basic score counting similar skills${m.simScore != null && m.simScore > m.score ? " (" + (m.similar || []).join(", ") + ")" : ""}.`;
   return `<div class="score ${esc(m.label.toLowerCase())}" title="${esc(tip)}">
       <span class="num">${m.score}<span class="of">/100</span></span>
-      <span class="lbl">${esc(m.label)} match</span>
-      <div class="sbar"><div class="fill" style="width:${Math.max(3, m.score)}%"></div></div>
-      <span class="kw">${m.matched.length} of ${m.found} keywords</span></div>`;
+      <span class="lbl">${esc(m.label)}</span>
+      <span class="kw">${r[1] ? r[0] + "/" + r[1] + " req" : m.matched.length + "/" + m.found + " kw"}` +
+    (m.prefScore != null ? ` · ★${m.prefScore}%` : "") +
+    (m.simScore != null && m.simScore > m.score ? ` · ≈${m.simScore}%` : "") + `</span></div>`;
 }
 function resumeNote(j) {
   const r = j.resume, queued = j.status === "selected" || j.status === "applying";
@@ -968,7 +1145,8 @@ function matchNote(j) {
     ? `<button class="kwb added" data-act="unskill" data-key="${k}" data-name="${esc(t)}" aria-label="Remove ${esc(t)}" title="Added by you for this job's resume - click to remove">+ ${esc(t)}</button>`
     : `<span class="kwchip added">+ ${esc(t)}</span>`);
   const ex = m.explain || {}, reqMiss = new Set(m.requiredMissing || []);
-  const items = (m.missing || []).map(t => {
+  const hasReq = ((m.required || [0, 0])[1] || 0) > 0;  // no required keywords: every keyword counts toward the basic score
+  const missItem = (t) => {
     const e = ex[t] || {}, name = esc(t);
     const btn = edit
       ? `<button class="kwb miss" data-act="skill" data-key="${k}" data-name="${name}" aria-label="I have ${name}" title="I have this skill - count it and add it to this job's resume">${name}</button>`
@@ -979,21 +1157,32 @@ function matchNote(j) {
       (e.similar || []).length ? `<span class="sim">you have ${esc(e.similar.join(", "))} - similar</span>` : "",
     ].filter(Boolean).join(" · ");
     return `<li>${btn}${reqMiss.has(t) ? `<span class="req" title="In the required / main part of the post">required</span>` : ""}<span class="expl">${bits}</span></li>`;
-  }).join("");
+  };
+  const allMiss = m.missing || [];
+  const basicMiss = hasReq ? allMiss.filter(t => reqMiss.has(t)) : allMiss;
+  const prefMiss = hasReq ? allMiss.filter(t => !reqMiss.has(t)) : [];
+  const hint = edit ? `<span class="hint">click the ones you have used, even under another name</span>` : "";
+  const missBlock = (title, list, tip, showHint) => `<section class="csec miss">
+      <h4>✗ ${title} <span class="cnt">${list.length}</span><span class="hint">${tip}</span>${showHint ? hint : ""}</h4>
+      ${list.length ? `<ul class="misslist">${list.map(missItem).join("")}</ul>` : `<div class="none">Nothing missing</div>`}</section>`;
   const have = [...plus, ...own];
   return `<div class="kwgrid"><section class="csec have">
       <h4>✓ On your resume <span class="cnt">${have.length}</span></h4>
       ${have.length ? `<div class="kwrow">${have.join("")}</div>` : `<div class="none">None of this post's keywords yet</div>`}
     </section>`
-    + (items ? `<section class="csec miss">
-      <h4>✗ Missing <span class="cnt">${(m.missing || []).length}</span>${edit ? `<span class="hint">click the ones you have used, even under another name</span>` : ""}</h4>
-      <ul class="misslist">${items}</ul></section>` : `<section class="csec miss"><h4>✗ Missing <span class="cnt">0</span></h4><div class="none">Nothing missing</div></section>`)
-    + `</div>`;
+    + `<div class="missgroup">`
+    + missBlock("Missing - basic", basicMiss, "required / minimum - counts in the match score", true)
+    + (hasReq ? missBlock("Missing - preferred", prefMiss, "★ stand-out only - never lowers the score", false) : "")
+    + `</div></div>`;
 }
 function cardNotes(j) {
   const s = j.status, out = [];
   const r = resumeNote(j);
   if (r) out.push(r);
+  if (j.analysis && j.analysis.status === "pending")
+    out.push(`<div class="note">⏳ Waiting for Claude to read the post (${esc(j.analysis.score)}% match with similar skills) - then it goes to the apply queue or to Waiting on you</div>`);
+  else if (j.analysis && j.analysis.status === "fail")
+    out.push(`<div class="note warn">AI analysis: not queued - ${esc(j.analysis.note || "")}</div>`);
   if ((j.flags || []).length)
     out.push(`<div class="note warn">⚠ Fails filter: ${esc(j.flags.map(f => (state.filters.find(x => x.id === f) || { label: f }).label).join(" · "))}</div>`);
   if (j.logNotes)
@@ -1018,6 +1207,8 @@ function card(j) {
     buttons.push(`<button data-act="submitted" data-key="${k}" title="You submitted this application yourself - log it as Submitted">Mark as submitted</button>`);
     buttons.push(`<button data-act="skipwaiting" data-key="${k}" title="Don't apply - log it as Skipped">Skip</button>`);
   }
+  if (s === "Test")  // applied by Claude while test mode is on: the user checks it, then moves it to Submitted
+    buttons.push(`<button class="primary" data-act="submitted" data-key="${k}" title="You checked this application - move it to the Submitted tab">Move to Submitted</button>`);
   if (s === "Needs User")  // back to the end of the apply queue; Claude continues in the tab it left open
     buttons.push(`<button data-act="continue" data-key="${k}" title="Back to the end of the apply queue - Claude finishes it in the tab it left open">Continue application</button>`);
   const links = [];
@@ -1238,7 +1429,7 @@ $("ansClose").onclick = () => $("ansDlg").close();
 const poll = { timer: null, version: "", busy: false };
 function isBusy(d) {
   const open = r => r && (r.status === "requested" || r.status === "running");
-  return (d.searchRequests || []).some(open) || open(d.profileRequest)
+  return (d.searchRequests || []).some(open) || open(d.profileRequest) || !!(d.schedule && d.schedule.active)
     || (d.jobs || []).some(j => j.status === "selected" || j.status === "applying");
 }
 function schedule() {

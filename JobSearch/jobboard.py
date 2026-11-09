@@ -44,6 +44,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
+import activity  # same folder: activity log of the scheduled search (what ran, what it found, what it cost)
 import answerbank  # same folder: the .env answer bank as a question list ("Update my answers")
 import applog  # same folder: log helpers
 import jobfilters  # same folder: the search filters as named checks (checkboxes on the page)
@@ -211,7 +212,7 @@ def view(board):
                     "defaultLevels": simplifysite.DEFAULT_LEVELS}
     except (OSError, ValueError):
         simplify = {"keySaved": False, "hours": 24, "limit": 10, "queries": [], "levels": [], "defaultLevels": []}
-    meta = {"searchRequests": board.get("searches", [])[-5:], "simplifySite": simplify,
+    meta = {"searchRequests": board.get("searches", [])[-5:], "simplifySite": simplify, "schedule": board.get("schedule"), "models": get_models(board), "modelChoices": MODEL_CHOICES, "modelTasks": MODEL_TASKS,
             "profileRequest": (board.get("profileRequests") or [None])[-1]}
     filters = [{"id": f, "label": label, "rule": rule} for f, label, rule in jobfilters.FILTERS
                if f not in jobfilters.STATUS_FILTERS]
@@ -415,6 +416,316 @@ def set_search(board, sid, status, note=None, found=None):
     return r
 
 
+# ---------- AI model per task (the page's AI model button) ----------
+# Which Claude model does the work of a queue run. "session" = whatever model this Claude session runs on; any other
+# value = Claude hands that job's work to a subagent running that model (Agent tool `model`), see autoApplyLoop step 2q.
+MODEL_CHOICES = {"session": "Same as this session", "haiku": "Haiku (cheapest)", "sonnet": "Sonnet (balanced)",
+                 "opus": "Opus (strongest, costliest)", "fable": "Fable"}
+MODEL_TASKS = {"resume": "Reading the job post and revising the resume",
+               "fill": "Filling the application forms"}
+MODEL_DEFAULTS = {"resume": "session", "fill": "session"}
+
+
+def get_models(board):
+    m = board.get("models") or {}
+    return {t: (m.get(t) if m.get(t) in MODEL_CHOICES else MODEL_DEFAULTS[t]) for t in MODEL_TASKS}
+
+
+def set_models(board, raw):
+    """Save the chosen models. Returns an error text, or None."""
+    new = get_models(board)
+    for t, v in (raw or {}).items():
+        if t not in MODEL_TASKS or v not in MODEL_CHOICES:
+            return f"unknown model choice {t}={v}"
+        new[t] = v
+    board["models"] = new
+    return None
+
+
+# ---------- compact brief for one job: a fresh subagent can apply from this alone (keeps the main session small) ----------
+BRIEF_SECRET = {"APPLICANT_PASSWORD", "APPLICANT_PASSWORD_ALT"}  # typed only with the browser bridge's type_secret, never printed
+
+
+def apply_brief(board, key):
+    """Self-contained text for ONE queued job: link, resume, mode, rules, applicant data + answer bank, logging commands.
+    Never contains the account password or tokens. Returns (text, error)."""
+    import re
+    j = board["jobs"].get(key)
+    if j is None:
+        return None, "job not on the board"
+    cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
+    ap = cfg.get("apply") or {}
+    auto, test = ap.get("autoSubmit", False), ap.get("testMode", False)
+    env = applog.read_env(applog.ENV)
+    plain = {k: v for k, (v, _q) in env.items() if k.startswith(("APPLICANT_", "ANSWER_")) and k not in BRIEF_SECRET}
+    sub = lambda s: re.sub(r"\$\{([A-Z0-9_]+)\}", lambda m: plain.get(m.group(1), m.group(0)), s)
+    r = j.get("resume") or tailor.build({**j, "addedSkills": []})
+    link = j.get("applyUrl") or j.get("url")
+    status = "Test" if test else "Submitted"
+    lg = (f'python applog.py add --company "{j.get("company")}" --role "{j.get("title")}" --location "{j.get("location", "")}" '
+          f'--status <STATUS> --id {j.get("id") or j["key"]} --url "{link}" --notes "<one line>"')
+    out = [f'APPLY BRIEF - {j.get("company")} | {j.get("title")} | {j.get("location", "")}',
+           f'key: {key}   id: {j.get("id") or "-"}   work dir: the JobSearch folder (cd there for python commands)',
+           f'apply link: {link}',
+           f'resume to upload: {r["pdf"]}' + (f'  (tailored: added {", ".join(j["addedSkills"])})' if j.get("addedSkills") else ""),
+           f'MODE: apply.autoSubmit={auto} apply.testMode={test}. ' +
+           (f'Click the final Submit, then log status {status}.' if auto else
+            'Fill everything but do NOT click the final Submit; leave the tab open and log status "Needs User" with note "READY TO SUBMIT ...".') +
+           (' (Test = sent, waiting for the user to move it to Submitted on the board.)' if test and auto else ""),
+           "", "STEPS"]
+    steps = []
+    if tailor.wants_revision(j):
+        steps.append(f'RESUME FIRST (REQUIRED - do not skip, and upload the rebuilt PDF, not the master): python tailor.py brief {key} (posting + exact resume bullets + rules), then write an edits JSON file in your '
+                     f'scratchpad and run python tailor.py revise {key} <file> (it rejects invented numbers / tools; fix and rerun; '
+                     f'it rebuilds the PDF above). Reword only what your real experience shows; skills-order only is fine.')
+    steps += [
+        "Check the posting against the rules below BEFORE filling anything; if it breaks one, do not apply: log \"Needs approval\" with the reason and reply.",
+        "Open the apply link in a NEW tab with the browser-bridge tools (open_tab). 'Site not allowed: <domain>' -> log Needs User 'site not allowed: <domain>' and reply.",
+        "Fill every field from APPLICANT / ANSWERS below (answer bank first). NEVER GUESS: if a question is not covered by ANSWERS - especially anything about the "
+        "applicant's personal, family or spouse situation, military / veteran status of relatives, criminal / legal / health / financial history, or references - do "
+        "NOT pick an answer: leave the tab open, log Needs User with the exact question, and reply (the user answers once and it is saved to the bank). "
+        "Upload the resume with upload_file (a 'Choose File' button works too). "
+        "Do dropdowns ONE AT A TIME (parallel ones clash); for Workday-style multi-level pickers click through the menu.",
+        "Sign-in / create account pages: email = APPLICANT_EMAIL; type the password ONLY with type_secret(name=APPLICANT_PASSWORD) into password fields "
+        "(never read, print or log it). If an account already exists use sign in, else Create Account. If APPLICANT_PASSWORD is rejected at sign in, or the site says it cannot set that password, retry ONCE with type_secret(name=APPLICANT_PASSWORD_ALT) (same rules: never print it) before giving up or resetting; if the account is created with it, mention \"used ALT password\" in the log note. Email code / verification link: do NOT use "
+        "mailcheck.py (not set up). Open https://outlook.live.com/mail/0/ in a SECOND new tab (already signed in), wait ~20 s after the site says it "
+        "sent the mail, check Inbox then Junk, open ONLY the newest mail from that company / site, copy just the code or the verify link from it "
+        "(never paste the mail text in your reply), close the Outlook tab, go back to the application tab and type the code / open the link. "
+        "If the mail is not there after 2 tries (a minute apart), or Outlook asks to sign in -> log Needs User.",
+        "Never touch CAPTCHA frames. Blocked (CAPTCHA, code you cannot get, a question the bank does not cover, site not allowed): leave the tab OPEN, "
+        "log Needs User with the reason, reply.",
+        f'Finish per MODE above. Log with: {lg}  (use the status named in MODE / the reason above; always include --url).',
+        "TOKEN HYGIENE: use read_page with a query / visibleOnly; avoid get_text of whole pages and screenshots unless stuck; do not paste page text in your reply.",
+        'REPLY with ONE line only: "<status> | <company> | <title> | <short reason> | tab open/closed". Close the tab of a finished job.']
+    out += [f"{i}. {s}" for i, s in enumerate(steps, 1)]
+    out += ["", "RULES (skip -> Needs approval): active security clearance required ('able to obtain' / Public Trust is fine); CBP work; years required > "
+            f"{experience_limits().get('max')}; degree beyond a Bachelor's with no Bachelor's alternative; staffing agency; skip companies "
+            f"({sub('${SKIP_COMPANIES}')}); 2027-grad-only programs; Amazon SDE roles. Level is judged from the TITLE only (junior to mid is fine; senior / staff / "
+            "principal / lead / manager in the title is not).", "", "APPLICANT"]
+    out += [f"{k}={sub(v)}" for k, v in plain.items() if k.startswith("APPLICANT_")]
+    out += ["", "ANSWERS (question -> answer)"]
+    for k, (v, q) in env.items():
+        if k.startswith("ANSWER_") and k not in BRIEF_SECRET:
+            out.append(f"- {q or k}: {sub(v)}")
+    return "\n".join(out), None
+
+
+# ---------- AI analysis between the score cut and the apply queue (autoApplyLoop step 2t) ----------
+def pending_analysis(board):
+    """Jobs the schedule found that score high enough and wait for Claude to read the posting, best match first."""
+    jobs = [j for j in board["jobs"].values() if (j.get("analysis") or {}).get("status") == "pending" and j.get("choice") == "new"]
+    return sorted(jobs, key=lambda j: -((j.get("analysis") or {}).get("score") or 0))
+
+
+def analysis_result(board, key, verdict, note):
+    """Claude's verdict on a posting: pass -> the job goes to the apply queue; fail -> it is logged Needs approval with the
+    reason (the user can still Approve & apply on the board). Returns an error text, or None."""
+    j = board["jobs"].get(key)
+    if j is None:
+        return "job not on the board"
+    if verdict not in ("pass", "fail"):
+        return "verdict must be pass or fail"
+    j["analysis"] = {**(j.get("analysis") or {}), "status": verdict, "note": (note or "")[:600], "doneAt": now_iso()}
+    if verdict == "pass":
+        set_choice(board, [key], "selected")
+        return None
+    data = applog.load()
+    if log_entry(j, data["jobs"]) is None:
+        data["jobs"].append({"date": dt.date.today().isoformat(), "company": j.get("company", ""), "role": j.get("title", ""),
+                             "location": j.get("location", ""), "status": "Needs approval",
+                             "url": j.get("applyUrl") or j.get("url") or "", "ids": [j["id"]] if j.get("id") else [],
+                             "notes": f"AI analysis (scheduled search) - not queued: {note}"})
+        applog.save(data)
+    return None
+
+
+# ---------- scheduled search + auto-queue (the page's Schedule button) ----------
+SCHEDULE_SOURCES = ("company", "simplify", "simplifysite")  # the searches the board server runs itself, no Claude needed
+SCHEDULE_DEFAULTS = {"hours": 8, "intervalMinutes": 60, "minScore": 75, "autoQueue": True, "maxQueuePerRun": 10,
+                     "maxAgeHours": 168, "analyze": False}  # a queued job may be posted up to this long ago (the Simplify website search reaches back a week)
+
+
+def schedule_settings(raw):
+    """Checked schedule choices from the dialog (jobBoard.schedule in the config can change the defaults / caps)."""
+    cfg = {**SCHEDULE_DEFAULTS, **(config().get("schedule") or {})}
+    raw = raw or {}
+    num = lambda k, lo, hi: min(max(float(raw.get(k) or cfg[k]), lo), hi)
+    sources = [x for x in raw.get("sources") or [] if x in SCHEDULE_SOURCES]
+    if not sources:
+        raise ValueError("pick at least one search")
+    return {"sources": sources, "hours": num("hours", 0.5, 24 * 14), "intervalMinutes": num("intervalMinutes", 10, 24 * 60),
+            "minScore": num("minScore", 1, 100), "autoQueue": raw.get("autoQueue", True) is not False,
+            "maxAgeHours": num("maxAgeHours", 1, 24 * 30), "analyze": raw.get("analyze", cfg["analyze"]) is not False,
+            "maxQueuePerRun": int(cfg["maxQueuePerRun"])}
+
+
+def start_schedule(board, raw):
+    st = schedule_settings(raw)
+    now = dt.datetime.now(dt.timezone.utc)
+    prev = board.get("schedule")
+    if prev and prev.get("active"):  # restarting: close the old one in the log
+        activity.log({"type": "schedule_end", "schedule": prev["startedAt"], "reason": "restarted"})
+    board["schedule"] = {**st, "active": True, "startedAt": now.isoformat(timespec="seconds"),
+                         "endsAt": (now + dt.timedelta(hours=st["hours"])).isoformat(timespec="seconds"),
+                         "nextRunAt": now.isoformat(timespec="seconds"), "runs": 0, "queued": 0, "note": "starting"}
+    activity.log({"type": "schedule_start", "ts": board["schedule"]["startedAt"], **{k: st[k] for k in (
+        "sources", "hours", "intervalMinutes", "minScore", "maxAgeHours", "analyze", "autoQueue")}})
+    return board["schedule"]
+
+
+def stop_schedule(board):
+    sch = board.get("schedule")
+    if sch and sch.get("active"):
+        sch["active"], sch["note"], sch["stoppedAt"] = False, "stopped by the user", now_iso()
+        activity.log({"type": "schedule_end", "schedule": sch["startedAt"], "reason": "stopped by the user"})
+
+
+def auto_queue_jobs(board, since, min_score, limit, max_age_hours=168, analyze=False):
+    """Put the jobs on the board (not only the ones this schedule found) in the apply queue when they are still to review, fail
+    no search filter (the board's "old" filter is replaced by the schedule's own max_age_hours) and score at least
+    min_score with similar skills counted as matches (matchscore simScore).
+    Returns [(job key, company, title, score)], best match first."""
+    picked = []
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=max_age_hours)
+    for j in view(board)["jobs"]:
+        if j.get("status") != "new" or j.get("choice") != "new" or j.get("analysis"):
+            continue  # already queued / skipped / applied / waiting on the user / already sent to analysis
+        if [f for f in j.get("flags") or [] if f != "old"]:
+            continue
+        try:  # posted date, else the day the board first saw it
+            when = dt.datetime.fromisoformat(j.get("posted") or j.get("firstSeen") or "")
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=dt.timezone.utc)
+            if when < cutoff:
+                continue  # posted before the schedule's age limit
+        except ValueError:
+            pass
+        sim = (j.get("match") or {}).get("simScore")
+        if sim is not None and sim >= min_score:
+            picked.append((sim, j))
+    picked.sort(key=lambda t: -t[0])
+    picked = picked[:limit] if limit else picked
+    if analyze:  # Claude reads each posting first (autoApplyLoop step 2t); passing jobs are queued by `jobboard.py analyzed`
+        for sim, j in picked:
+            board["jobs"][j["key"]]["analysis"] = {"status": "pending", "score": sim, "at": now_iso()}
+    else:
+        set_choice(board, [j["key"] for _s, j in picked], "selected")
+    for sim, j in picked:
+        board["jobs"][j["key"]]["autoQueued"] = {"score": sim, "at": now_iso()}
+    return [(j["key"], j.get("company"), j.get("title"), sim) for sim, j in picked]
+
+
+def run_search_now(source):
+    """One search of the schedule, run in this thread. Returns a short result text."""
+    with LOCK:
+        board = load_board()
+        opts = None
+        if source == "simplifysite":
+            import simplifysite  # same folder
+            if not simplifysite.saved_key():
+                txt = "Simplify website: no key saved (open Search Simplify website once and paste it)"
+                return txt, {"status": "skipped", "note": txt}
+            opts = simplifysite.options({}, json.loads(CONFIG.read_text(encoding="utf-8")))
+        r = request_search(board, source)
+        if r is None:
+            txt = f"{SEARCH_SOURCES[source]}: a search is already running - skipped"
+            return txt, {"status": "skipped", "note": txt}
+        save_board(board)
+    if source == "simplifysite":
+        run_simplify_site(r["id"], opts)
+    else:
+        {"company": run_company, "simplify": run_simplify}[source](r["id"])
+    with LOCK:
+        done = next((x for x in load_board().get("searches", []) if x["id"] == r["id"]), r)
+    return (f'{SEARCH_SOURCES[source]}: {done["status"]}, {done.get("found", 0)} new' +
+            (f' ({done["note"]})' if done["status"] == "failed" else "")), done
+
+
+def timed_search(source, started, rnd):
+    """run_search_now + an activity log line (button, how long, status, how many new jobs met the filters)."""
+    import time
+    t0 = time.monotonic()
+    text, done = run_search_now(source)
+    done = done or {}
+    activity.log({"type": "search", "schedule": started, "round": rnd, "button": activity.BUTTONS.get(source, source),
+                  "seconds": round(time.monotonic() - t0), "status": done.get("status", "skipped"),
+                  "found": done.get("found", 0), "note": done.get("note") or text})
+    return text
+
+
+def schedule_cycle():
+    """If a schedule is active and due: run its searches, then queue the good matches. Returns True when it ran."""
+    with LOCK:
+        board = load_board()
+        sch = board.get("schedule")
+        if not sch or not sch.get("active"):
+            return False
+        now = dt.datetime.now(dt.timezone.utc)
+        if now < dt.datetime.fromisoformat(sch["nextRunAt"]):
+            return False
+        if now >= dt.datetime.fromisoformat(sch["endsAt"]):
+            sch["active"], sch["note"] = False, f'finished after {sch["runs"]} runs, {sch["queued"]} jobs queued'
+            save_board(board)
+            activity.log({"type": "schedule_end", "schedule": sch["startedAt"], "reason": sch["note"]})
+            return False
+        sch["running"], sch["note"] = True, "searching…"
+        save_board(board)
+        started, sources, rnd = sch["startedAt"], list(sch["sources"]), sch.get("runs", 0) + 1
+    import time
+    t_round = time.monotonic()
+    results = []
+    for src in sources:
+        try:
+            results.append(timed_search(src, started, rnd))
+        except Exception as e:  # one failing search never stops the schedule
+            results.append(f"{SEARCH_SOURCES[src]}: {type(e).__name__}: {e}")
+    queued = []
+    with LOCK:
+        board = load_board()
+        sch = board.get("schedule") or {}
+        sch["running"] = False
+        if not sch.get("active"):  # stopped meanwhile
+            save_board(board)
+            return True
+        if sch.get("autoQueue"):
+            try:
+                queued = auto_queue_jobs(board, started, sch["minScore"], sch.get("maxQueuePerRun", 10), sch.get("maxAgeHours", 168),
+                                         sch.get("analyze", False))
+            except Exception as e:
+                results.append(f"auto-queue failed: {type(e).__name__}: {e}")
+        sch["runs"] += 1
+        sch["toAnalyze" if sch.get("analyze") else "queued"] = sch.get("toAnalyze" if sch.get("analyze") else "queued", 0) + len(queued)
+        sch["lastRunAt"] = now_iso()
+        nxt = dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=sch["intervalMinutes"])
+        sch["nextRunAt"] = nxt.isoformat(timespec="seconds")
+        if nxt >= dt.datetime.fromisoformat(sch["endsAt"]):
+            sch["active"] = False
+            sch["note"] = f'finished after {sch["runs"]} runs, {sch["queued"]} jobs queued'
+        else:
+            sch["note"] = "; ".join(results)
+        sch["lastQueued"] = [f"{c} - {t} ({sc}%)" for _k, c, t, sc in queued]
+        sch["lastWasAnalysis"] = bool(sch.get("analyze"))
+        save_board(board)
+        activity.log({"type": "round", "schedule": started, "round": rnd, "seconds": round(time.monotonic() - t_round),
+                      "mode": "analysis" if sch.get("analyze") else "queue", "jobs": sch["lastQueued"]})
+        if not sch.get("active"):
+            activity.log({"type": "schedule_end", "schedule": started, "reason": sch["note"]})
+    if queued and not sch.get("analyze"):  # tailored-resume builds take the board lock themselves
+        start_builds(load_board(), [k for k, *_ in queued])
+    print(f'schedule run: {"; ".join(results)}; queued {len(queued)}')
+    return True
+
+
+def scheduler_loop():
+    import time
+    while True:
+        try:
+            schedule_cycle()
+        except Exception as e:  # never stop the board over the scheduler
+            print(f"scheduler: {type(e).__name__}: {e}")
+        time.sleep(20)
+
+
 # ---------- "Mark as submitted" on jobs waiting on the user ----------
 WAITING = {"Needs User", "Needs approval", "Pending", "Candidate"}
 
@@ -422,7 +733,7 @@ WAITING = {"Needs User", "Needs approval", "Pending", "Candidate"}
 APPROVED = "Approved"
 CONTINUE_NOTE = "Continue application clicked by the user on the job board - finish it where it stopped"
 WAITING_ACTIONS = {  # action -> (new applications.json status, note, statuses it applies to)
-    "submitted": ("Submitted", "Marked submitted by the user on the job board", WAITING | {APPROVED}),
+    "submitted": ("Submitted", "Marked submitted by the user on the job board", WAITING | {APPROVED, "Test"}),
     "skipped": ("Skipped", "Skipped by the user on the job board", WAITING | {APPROVED}),
     "approve": (APPROVED, "Approved by the user on the job board - apply anyway", WAITING - {"Needs User"} | {APPROVED}),
     "continue": (APPROVED, CONTINUE_NOTE, {"Needs User", APPROVED}),
@@ -551,6 +862,10 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 board = load_board()
             return self.send(200, {**view(board), "version": version})
+        if path == "/api/activitylog":
+            if not local_request(self):
+                return self.send(403, {"error": "forbidden"})
+            return self.send(200, {"text": activity.render(), "file": str(activity.MD)})
         if self.path == "/api/answers":
             if not local_request(self):
                 return self.send(403, {"error": "forbidden"})
@@ -623,6 +938,26 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/answers":
             n = answerbank.save(body.get("answers") or {})
             return self.send(200, {"saved": n, "questions": answerbank.questions()})
+        if self.path == "/api/models":
+            with LOCK:
+                board = load_board()
+                err = set_models(board, {k: body.get(k) for k in MODEL_TASKS if body.get(k) is not None})
+                if err:
+                    return self.send(400, {"error": err})
+                save_board(board)
+            return self.send(200, view(board))
+        if self.path == "/api/schedule":
+            with LOCK:
+                board = load_board()
+                if body.get("action") == "stop":
+                    stop_schedule(board)
+                else:
+                    try:
+                        start_schedule(board, body)
+                    except (ValueError, TypeError) as e:
+                        return self.send(400, {"error": str(e)})
+                save_board(board)
+            return self.send(200, view(board))
         if self.path == "/api/search":
             if body.get("source") not in SEARCH_SOURCES:
                 return self.send(400, {"error": "source must be " + " or ".join(SEARCH_SOURCES)})
@@ -679,7 +1014,15 @@ def serve(open_browser=True):
             webbrowser.open(url)
         return
     print(f"Job board: {url}  (Ctrl+C to stop)")
+    try:  # a schedule that was already running when the activity log was introduced still gets its header (earlier rounds are not logged)
+        sch = load_board().get("schedule")
+        if sch and sch.get("active") and not any(e["type"] == "schedule_start" and e["ts"] == sch["startedAt"] for e in activity.events()):
+            activity.log({"type": "schedule_start", "ts": sch["startedAt"], **{k: sch.get(k) for k in (
+                "sources", "hours", "intervalMinutes", "minScore", "maxAgeHours", "analyze", "autoQueue")}})
+    except Exception as e:
+        print(f"activity log backfill: {e}")
     threading.Thread(target=ensure_skillbank, daemon=True).start()
+    threading.Thread(target=scheduler_loop, daemon=True).start()
     if open_browser:
         threading.Timer(0.5, webbrowser.open, [url]).start()
     try:
@@ -707,7 +1050,7 @@ def watch():
         return code["mod"]
 
     def keys():
-        """(queued (job key, time it was queued), open search requests) or None if the board can't be read right now.
+        """(queued (job key, time it was queued), open search requests, keys waiting for analysis) or None if the board can't be read right now.
         The time makes a job that left the queue and came back (Continue / Approve & apply) count as new, even when
         the watcher never saw the queue without it."""
         try:
@@ -715,7 +1058,8 @@ def watch():
             with LOCK:
                 board = m.load_board()
             return ([(j["key"], j.get("choiceAt")) for j in m.queue(board)],
-                    [r for r in board.get("searches", []) + board.get("profileRequests", []) if r["status"] == "requested"])
+                    [r for r in board.get("searches", []) + board.get("profileRequests", []) if r["status"] == "requested"],
+                    [j["key"] for j in m.pending_analysis(board)])
         except (OSError, ValueError):
             return None
 
@@ -734,8 +1078,15 @@ def watch():
                 print(f"search request {r['id']}: {r['source']} - search {SEARCH_SOURCES[r['source']]} in Chrome "
                       f"(autoApplyLoop step 2g)", flush=True)
 
-    first = keys() or ([], [])
-    seen, seen_req = set(first[0]), {r["id"] for r in first[1]}
+    def announce_analysis(pending, seen_an):
+        new = [k for k in pending if k not in seen_an]
+        if new:
+            print(f"analyze request: {len(pending)} job{'' if len(pending) == 1 else 's'} waiting for AI analysis - run "
+                  f"`python jobboard.py analyze` and judge each posting (autoApplyLoop step 2t): {' '.join(new)}", flush=True)
+
+    first = keys() or ([], [], [])
+    seen, seen_req, seen_an = set(first[0]), {r["id"] for r in first[1]}, set(first[2])
+    announce_analysis(first[2], set())
     if seen:
         print(f"{len(seen)} job{'' if len(seen) == 1 else 's'} in the apply queue: {' '.join(sorted(k for k, _ in seen))}",
               flush=True)
@@ -750,7 +1101,9 @@ def watch():
         got = keys()
         if got is None:
             continue
-        cur, reqs = got
+        cur, reqs, pend = got
+        announce_analysis(pend, seen_an)
+        seen_an |= set(pend)
         new = [k for k in cur if k not in seen]
         if new:
             print(f"new in apply queue ({len(cur)} queued): {' '.join(k for k, _ in new)}", flush=True)
@@ -784,6 +1137,15 @@ def main():
     sp.add_argument("status", choices=["running", "done", "failed"])
     sp.add_argument("--note")
     sub.add_parser("watch")
+    sub.add_parser("analyze")
+    lgp = sub.add_parser("log")
+    lgp.add_argument("--all", action="store_true", help="every scheduled run, not only the latest")
+    abp = sub.add_parser("applybrief")
+    abp.add_argument("key")
+    anp = sub.add_parser("analyzed")
+    anp.add_argument("key")
+    anp.add_argument("verdict", choices=["pass", "fail"])
+    anp.add_argument("--note", default="")
     a = ap.parse_args()
 
     if a.cmd == "watch":
@@ -838,6 +1200,12 @@ def main():
                 print(f"No selected jobs waiting. {waiting} new jobs are on the board for the user to review.")
                 sys.exit(1)
             print(f"{len(q)} selected jobs to apply to, in the user's order:")
+            mdl = get_models(board)
+            print("AI MODEL (the user's choice on the board): " + "; ".join(f"{MODEL_TASKS[t].lower()} = {mdl[t]}" for t in MODEL_TASKS) +
+                  " - 'session' = do it yourself; otherwise do that part in an Agent subagent with model=<that value> "
+                  "(skip the subagent when it is the model you already run on) - autoApplyLoop step 2q")
+            print("CONTEXT: run EACH job in a fresh Agent subagent (prompt: cd to the JobSearch folder, run `python jobboard.py applybrief <key>`, "
+                  "follow it exactly, reply with its ONE-line result) so this session stays small; one subagent at a time (one browser).")
             log_jobs = applog.load()["jobs"]
             for i, j in enumerate(q, 1):
                 e = log_entry(j, log_jobs)
@@ -855,11 +1223,52 @@ def main():
                         print(f'      PLACE FIRST (step 4b): {", ".join(r["needsPlacement"])} - reword one real bullet '
                               f'(python tailor.py place "<kw>" "<entry>" "<original>" "<new>") or Skills only '
                               f'(python tailor.py place "<kw>" skills); that rebuilds this resume')
+                if tailor.wants_revision(j):
+                    print(f'      REVISE RESUME FIRST (step 4b): python tailor.py brief {j["key"]} -> read the posting, write the '
+                          f'edits file, python tailor.py revise {j["key"]} <edits.json> (rebuilds the resume above)')
+                elif j.get("revision"):
+                    print(f'      resume revised for this posting: {j["revision"].get("summary") or "yes"}')
                 if e and e.get("notes", "").rfind(CONTINUE_NOTE) > e.get("notes", "").rfind("Approved by the user"):
                     print(f'      CONTINUE - the user clicked Continue application: finish this Needs User job where it stopped '
                           f'(reuse its open tab if it is still there; the user may have done the blocked step): {e.get("notes", "")}')
                 elif e:  # status Approved
                     print(f'      APPROVED BY THE USER - apply even though it failed a rule earlier: {e.get("notes", "")}')
+        elif a.cmd == "log":
+            print(activity.render(show_all=a.all))
+        elif a.cmd == "applybrief":
+            text, err = apply_brief(board, a.key)
+            if err:
+                sys.exit(err)
+            print(text)
+        elif a.cmd == "analyze":
+            pend = pending_analysis(board)
+            if not pend:
+                print("No jobs waiting for analysis.")
+                sys.exit(1)
+            mdl = get_models(board)
+            full = json.loads(CONFIG.read_text(encoding="utf-8"))
+            print(f"AI MODEL (the user's choice for reading the post): {mdl['resume']} - 'session' = do it yourself, otherwise an Agent subagent "
+                  f"with model=<that value> (skip when it is the model you run on)")
+            print(f"{len(pend)} job(s) scored high enough (similar skills counted) and wait for your analysis. For each: read the posting "
+                  f"(open its link for the full text), check it against the rules (years <= {experience_limits().get('max')}, no ACTIVE clearance "
+                  f"(\"able to obtain\" / Public Trust is OK), no CBP, no staffing agency, pay vs salaryExpectation, location / work mode, "
+                  f"skip companies, 2027-grad-only, level judged from the TITLE only: junior to mid is fine, reject only senior / staff / principal / lead / manager in the title) and run: python jobboard.py analyzed <key> pass|fail --note \"<reason>\"\n"
+                  f"  pass -> the job goes to the apply queue (a queue run applies); fail -> logged Needs approval with your note.")
+            for i, j in enumerate(pend, 1):
+                facts = card_facts(j)
+                print(f'\n{i:>3}. {j["company"]} | {j["title"]} | {j.get("location", "")} | match {(j.get("analysis") or {}).get("score")}%'
+                      f'\n      key: {j["key"]}\n      {j.get("applyUrl") or j.get("url")}'
+                      f'\n      experience: {facts["experience"].get("text") or "-"} | salary: {facts["salary"] or "-"} | '
+                      f'work mode: {facts["workMode"] or "-"} | clearance: {(facts["clearance"] or {}).get("quote") or "none mentioned"}'
+                      f'\n      {(j.get("description") or "")[:4000]}')
+        elif a.cmd == "analyzed":
+            err = analysis_result(board, a.key, a.verdict, a.note)
+            if err:
+                sys.exit(err)
+            save_board(board)
+            if a.verdict == "pass":
+                start_builds(board, [a.key])
+            print(f"{a.key}: analysis {a.verdict}" + (" - in the apply queue" if a.verdict == "pass" else " - logged Needs approval"))
         elif a.cmd == "applying":
             j = board["jobs"].get(a.key)
             if not j:

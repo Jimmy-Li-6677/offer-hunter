@@ -15,7 +15,8 @@ Usage (from the JobSearch folder):
   python applog.py missing                                        -> what is still empty / unconfirmed in ../private/
       (REQUIRED items block the job search; exit 1 while any are left)
 
-Statuses: Submitted, Skipped, Needs User, Needs approval, Pending, Candidate.
+Statuses: Submitted, Test (applied while apply.testMode is on - the user moves it to Submitted on the job board after checking it),
+Skipped, Needs User, Needs approval, Pending, Candidate.
 """
 import argparse
 import datetime as dt
@@ -31,6 +32,7 @@ LOG = PRIVATE / "applications.json"
 ENV = PRIVATE / ".env"
 ENV_EXAMPLE = EXAMPLES / ".env.example"
 DAILY_COMPANY_CAP = 2  # user rule 2026-10-13: at most 2 applications to the same company per day
+SENT_STATUSES = ("Submitted", "Test")  # applications actually sent (Test = sent, waiting for the user's check); count toward the daily cap
 OPEN_STATUSES = {"needs user", "needs approval", "pending", "candidate"}
 
 
@@ -75,7 +77,7 @@ def cmd_check(a):
     for e in hits:
         print(row(e))
     today = dt.date.today().isoformat()
-    sent_today = [e for e in data["jobs"] if e["status"] == "Submitted" and e["date"] == today and matches(e, a.company)]
+    sent_today = [e for e in data["jobs"] if e["status"] in SENT_STATUSES and e["date"] == today and matches(e, a.company)]
     print(f"{a.company}: {len(sent_today)} submitted today (limit {DAILY_COMPANY_CAP}/day)")
     if len(sent_today) >= DAILY_COMPANY_CAP:
         print("DAILY COMPANY CAP REACHED - do not apply today; log as Candidate with note 'company daily cap'")
@@ -113,13 +115,18 @@ def cmd_add(a):
     if a.url:
         entry["url"] = a.url
     if not entry.get("url"):  # user rule 2026-10-13: every job keeps the link of the posting / application page
-        if a.status.lower() == "submitted":
-            sys.exit("ERROR: --url is required for Submitted jobs (link of the posting / application page). Nothing saved.")
+        if a.status.lower() in ("submitted", "test"):
+            sys.exit("ERROR: --url is required for Submitted / Test jobs (link of the posting / application page). Nothing saved.")
         print("WARNING: no --url given - add the posting link (python applog.py add ... --url <link>)")
     if a.source:
         entry["source"] = a.source
     save(data)
     print(f'{action}: {entry["company"]} | {entry["role"]} | {entry["status"]} | {entry.get("url", "NO LINK")}')
+    try:  # activity log of the scheduled search: when this job was logged, how long it took, what it cost (activity.py)
+        import activity
+        activity.log_apply(entry)
+    except Exception as e:  # logging an application must never fail because of the activity log
+        print(f"(activity log skipped: {type(e).__name__}: {e})")
 
 
 def cmd_list(a, only_open=False):

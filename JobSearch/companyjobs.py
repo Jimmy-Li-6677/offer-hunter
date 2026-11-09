@@ -42,7 +42,11 @@ UA = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
 # companyJobs.titleInclude = a regex every kept title must match, e.g. software titles only, or banking titles only).
 # These are only fallbacks when the config leaves them out.
 DEFAULTS = {"queries": ["software engineer"], "postedWithinHours": 72, "maxJobs": 25, "maxPerCompany": 3, "pages": 2,
-            "titleInclude": "", "minEmployees": 0}
+            "titleInclude": "", "minEmployees": 0,
+            # Workday / Oracle / Amazon / Microsoft / own career sites only offer a keyword search that returns the best
+            # few dozen results, so "Backend Developer, Palantir" is not found by "software engineer": every one of them is
+            # also searched with these extra title words (Greenhouse / Lever / Ashby return the whole board anyway)
+            "siteQueries": ["developer", "engineer", "backend developer", "frontend developer", "full stack", "data engineer"]}
 
 
 def _get(url, body=None, timeout=30):
@@ -274,13 +278,16 @@ def _get_html(url, timeout=30):
 
 
 def careersite(c, query, pages):
-    """c["site"] = the careers base, e.g. https://apply.deloitte.com/en_US/careers. Lists SearchJobs/<query>, then reads
-    each posting's JobPosting JSON-LD (the list has no date): posted date + full text."""
+    """c["site"] = the careers base, e.g. https://apply.deloitte.com/en_US/careers. Lists SearchJobs/<query> newest first
+    (jobSort=datePosted), then reads each posting's JobPosting JSON-LD for the full text. The list shows no date and the
+    JSON-LD datePosted is the ORIGINAL posting date (Deloitte refreshes postings: one the site lists among its newest was
+    "posted" months ago), so `posted` stays empty: being among the newest results of the date-sorted search is the
+    recency signal (the board skips jobs it already has)."""
     base = c["site"].rstrip("/")
     out, per = [], 10
     for page in range(pages):
         try:
-            h = _get_html(f"{base}/SearchJobs/{urllib.parse.quote(query)}?listFilterMode=1&jobSort=relevancy"
+            h = _get_html(f"{base}/SearchJobs/{urllib.parse.quote(query)}?listFilterMode=1&jobSort=datePosted"
                           f"&jobRecordsPerPage={per}&jobOffset={page * per}")
         except (OSError, http.client.HTTPException):
             break
@@ -301,8 +308,6 @@ def careersite(c, query, pages):
             d = json.loads(ld.group(1)) if ld else {}
         except (OSError, ValueError, http.client.HTTPException):
             return
-        if d.get("datePosted"):
-            j["posted"] = _not_future(d["datePosted"] + "T12:00:00+00:00")
         j["_text"] = _plain(d.get("description") or d.get("qualifications"))
     with concurrent.futures.ThreadPoolExecutor(6) as ex:
         list(ex.map(read, out))
@@ -352,6 +357,11 @@ def _details(j):
     return j
 
 
+def search_queries(s):
+    """What a keyword-search career site is searched for: the role searches plus the extra title words (siteQueries)."""
+    return list(s["queries"]) + [x for x in s["siteQueries"] if x not in s["queries"]]
+
+
 def candidates(board_jobs, cfg=None, log=print):
     """(jobs to add, note). board_jobs = the board's jobs + removed keys (already seen: left out)."""
     cfg = cfg if cfg is not None else json.loads(jobfilters.CONFIG.read_text(encoding="utf-8"))
@@ -365,7 +375,7 @@ def candidates(board_jobs, cfg=None, log=print):
     # Workday / Oracle / Amazon / Microsoft are searches: one per query.
     whole = {"greenhouse", "lever", "ashby"}
     tasks = [(c, "") for c in s["companies"] if c["ats"] in whole]
-    tasks += [(c, q) for c in s["companies"] if c["ats"] not in whole for q in s["queries"]]
+    tasks += [(c, q) for c in s["companies"] if c["ats"] not in whole for q in search_queries(s)]
     pool, failed = {}, set()
     with concurrent.futures.ThreadPoolExecutor(8) as ex:
         futures = {ex.submit(FETCH[c["ats"]], c, q, s["pages"]): c for c, q in tasks}
@@ -551,6 +561,9 @@ def entry_from_url(url, name):
     m = re.search(r"(https://[^/]+\.oraclecloud\.com)/hcmUI/CandidateExperience/[a-z-]+/sites/([^/?#]+)", url)
     if m:
         return {"name": name, "ats": "oracle", "site": m[1], "siteNumber": m[2]}
+    m = re.search(r"(https://[^/]+/[^?#]*?/careers)/JobDetail/", url)  # Deloitte-style SearchJobs / JobDetail sites
+    if m:
+        return {"name": name, "ats": "careersite", "site": m[1]}
     if "amazon.jobs" in url:
         return {"name": name, "ats": "amazon"}
     if "careers.microsoft.com" in url:
@@ -613,6 +626,66 @@ def run_discovery(items, queries, write, workers=12):
     return found, missing
 
 
+def _same_site(a, b):
+    """Two company entries point at the same career site / board."""
+    if a["ats"] != b["ats"]:
+        return False
+    if a["ats"] in ("amazon", "microsoft"):
+        return True
+    key = lambda c: (c.get("board") or c.get("site") or "").lower().rstrip("/")
+    return key(a) == key(b)
+
+
+def why(url, cfg, extra_queries=()):
+    """Explain why a job link was (not) found by the company search - works for every supported site: is the company
+    configured, does any of its searches return the job, and which filter drops it. Nothing is added to the board."""
+    s = settings(cfg)
+    link = entry_from_url(url, "?")
+    if not link:
+        print("not a supported job link (Workday, Greenhouse, Lever, Ashby, Oracle, Amazon, Microsoft, or a company career site)")
+        return
+    mine = next((c for c in s["companies"] if _same_site(link, c)), None)
+    if mine is None:
+        print(f"This site is not in companyJobs.companies (or the company is under companyJobs.minEmployees): add it with\n"
+              f'  python companyjobs.py --add "{url}" --name "<Company>" --employees "10,001+" --write')
+        return
+    print(f'Company: {mine["name"]} ({mine["ats"]})')
+    needle = re.split(r"[?#]", url.rstrip("/"))[0].rsplit("/", 1)[-1]
+    whole = mine["ats"] in ("greenhouse", "lever", "ashby")
+    queries = [""] if whole else search_queries(s) + [q for q in extra_queries if q not in search_queries(s)]
+    hit, pool = None, {}
+    for q in queries:
+        try:
+            got = FETCH[mine["ats"]](mine, q, s["pages"])
+        except Exception as e:
+            print(f'  search "{q}": error {type(e).__name__}: {e}')
+            continue
+        pool.update({j["id"]: j for j in got})
+        match = next((j for j in got if needle and needle in j["url"]), None)
+        print(f'  search "{q or "(whole board)"}": {len(got)} jobs' + (" - FOUND" if match else ""))
+        hit = hit or match
+    if hit is None:
+        print("The job is not returned by any search: the site's keyword search did not list it among its best results. "
+              'Try other title words with --query "<words from its title>", and add what works to companyJobs.siteQueries.')
+        return
+    ctx = jobfilters.context(cfg=cfg, log_jobs=applog.load()["jobs"], hours=s["postedWithinHours"])
+    flags = set(jobfilters.check(hit, ctx)[0])
+    if re.fullmatch(r"(?:\d+|multiple)\s+Locations?", hit["location"] or "", re.I):
+        flags.discard("location")
+    print(f'Found: "{hit["title"]}" | {hit["location"]} | posted {hit["posted"] or "unknown"}')
+    if not re.compile(s["titleInclude"] or ".", re.I).search(hit["title"]):
+        flags.add("title (companyJobs.titleInclude)")
+    if s.get("titleExclude") and re.search(s["titleExclude"], hit["title"], re.I):
+        flags.add("title (companyJobs.titleExclude)")
+    if flags:
+        print("Dropped before reading the posting by: " + ", ".join(sorted(flags)))
+        return
+    _details(hit)
+    late = jobfilters.check(hit, ctx)[0]
+    print("Dropped after reading the posting by: " + ", ".join(late) if late else
+          "Passes every filter - it is added unless it is already on the board / was removed, or the maxJobs / maxPerCompany limits cut it.")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dry-run", action="store_true")
@@ -623,9 +696,13 @@ def main():
     ap.add_argument("--name", help="company name for --add")
     ap.add_argument("--employees", default="", help="size bucket to save, e.g. 10,001+ or 1,001-5,000")
     ap.add_argument("--write", action="store_true", help="save what --discover / --add found to the config")
+    ap.add_argument("--why", metavar="URL", help="explain why a job link was not found by the company search")
+    ap.add_argument("--query", action="append", default=[], help="extra search words to try with --why")
     a = ap.parse_args()
     cfg = json.loads(jobfilters.CONFIG.read_text(encoding="utf-8"))
     queries = settings(cfg)["queries"]
+    if a.why:
+        return why(a.why, cfg, a.query)
     if a.add:
         if not a.name:
             ap.error("--add needs --name")

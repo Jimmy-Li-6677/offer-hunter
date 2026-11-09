@@ -149,7 +149,7 @@ def clearance_from(text):
     text = re.sub(r"\bU\.\s?S\.", "US", text or "")  # "U.S. Government" is not a sentence end
     best = None
     start = _CLR_START.search(text)
-    for sent in re.split(r"(?<=[.;!?])\s+|\n+|\s+[•·]\s+", text):
+    for sent in re.split(r"(?<=[.;!?])\s+|\n+|\s+[•·]\s+|\s+(?=Note\s*:)", text):  # a "Note: ... to obtain" tail is its own sentence
         if not _CLR_TYPE.search(sent) or _CLR_NOT_JOB.search(sent):
             continue
         if re.fullmatch(r"\W*clearance\W*", sent, re.I):
@@ -157,7 +157,11 @@ def clearance_from(text):
         if not re.search(r"clearance|security|\bDoD\b|government|\bTS\b|SCI|polygraph|public\s+trust|\bDOE\b", sent, re.I):
             continue  # a bare "Secret" (e.g. a product or slogan), not a clearance
         trust_only = bool(re.search(r"public\s+trust", sent, re.I)) and not re.search(r"secret|\bTS\b|SCI|polygraph", sent, re.I)
-        if _CLR_OBTAIN.search(sent):
+        explicit_active = re.search(r"\b(?:active|current|existing)\s+(?:\w+\s+){0,4}(?:clearance|secret|TS\s*/\s*SCI|top[- ]secret)", sent, re.I) and \
+            not re.search(r"\b(?:preferred|plus|desired|nice to have|not required|no\s+\w+\s+required)\b", sent, re.I)
+        if explicit_active and not trust_only:
+            need = "active"  # "must have an ACTIVE secret clearance" - even with "to obtain" elsewhere in the sentence
+        elif _CLR_OBTAIN.search(sent):
             need = "public trust" if trust_only else "obtain"
         elif trust_only:
             need = "public trust"

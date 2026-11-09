@@ -15,12 +15,22 @@ from the master .tex); if not, the keyword stays on the Technical Skills line on
 skills`). Saved in ../private/keyword-placements.json and reused for every later job with that keyword. Rewording
 keeps the resume length; a rewrite that would push it past resumeTailor.maxPages is left out.
 
+AI revision per job (user 2026-11-09): for each queued job Claude READS THE POSTING and revises the master resume from the
+user's real experience, instead of only adding keywords: `python tailor.py brief <key>` prints the posting, every
+experience / project bullet (exact LaTeX) and the rules; Claude writes an edits file and `python tailor.py revise <key>
+<edits.json>` checks it (no new numbers, no tool or skill that is not already on the resume, about the same length), saves it
+as the job's `revision` on the board and rebuilds the PDF. Bullets are reworded to lead with what the posting asks for
+(same facts), and Technical Skills items the posting names move to the front of their line. Config resumeTailor.aiRevise:
+"all" (every queued job, default) | "auto" (only jobs the Schedule put in the queue) | "off".
+
 Usage (from the JobSearch folder):
   python tailor.py <job key>                                -> build that job's resume now (prints the PDF path)
   python tailor.py --check                                  -> compiler, master files, resume entries
   python tailor.py placements                               -> saved placement for each keyword
   python tailor.py place "<kw>" skills                      -> Technical Skills only (experience doesn't show it)
   python tailor.py place "<kw>" "<entry>" "<original>" "<new>" -> reword that bullet; rebuilds queued jobs using it
+  python tailor.py brief <job key>                          -> posting + resume bullets + rules for the AI revision
+  python tailor.py revise <job key> <edits.json>            -> check, save and build the AI revision (see brief for the format)
 """
 import hashlib
 import json
@@ -67,7 +77,7 @@ def settings(cfg=None):
     pdf_name = rt.get("pdfName") or (tex.stem + ".pdf" if tex else "Resume.pdf")
     return {"enabled": rt.get("enabled", True), "tex": tex, "pdfName": pdf_name,
             "masterPdf": PRIVATE / (rt.get("masterPdf") or pdf_name), "outDir": PRIVATE / rt.get("outDir", "resumes"),
-            "maxPages": rt.get("maxPages", 1)}
+            "maxPages": rt.get("maxPages", 1), "aiRevise": rt.get("aiRevise", "all")}
 
 
 def compiler():
@@ -187,6 +197,149 @@ def rewrite(tex, where, original, new):
     return None
 
 
+# ---------- AI revision: Claude reads the posting and rewrites the master resume's bullets (truthfully) ----------
+def wants_revision(job, cfg=None):
+    """True when this job should get an AI revision (resumeTailor.aiRevise) and has none yet."""
+    mode = settings(cfg)["aiRevise"]
+    if job.get("revision") or mode == "off" or not settings(cfg)["enabled"]:
+        return False
+    return mode == "all" or bool(job.get("autoQueued"))
+
+
+def _plain(latex):
+    return re.sub(r"\\(.)", r"\1", re.sub(r"\\(?:sim|times)\b", " ", latex or "")).replace("$", "")
+
+
+def _numbers(text):
+    return set(re.findall(r"\d+(?:[.,]\d+)*", text))
+
+
+def split_items(items):
+    """Skills line items split at commas outside parentheses."""
+    out, depth, cur = [], 0, ""
+    for ch in items:
+        depth += ch == "("
+        depth -= ch == ")"
+        if ch == "," and depth == 0:
+            out.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        out.append(cur.strip())
+    return out
+
+
+def reorder_skills(tex, first):
+    """Technical Skills items named in `first` (existing items only) move to the front of their line, in that order.
+    Returns (new text, [names not found on any line])."""
+    want = [re.sub(r"\s+", " ", f.strip().lower()) for f in first]
+    lines, found = tex.splitlines(keepends=True), set()
+    for i, l in enumerate(lines):
+        m = SKILL_LINE.match(l.rstrip("\r\n"))
+        if not m:
+            continue
+        items = split_items(m["items"])
+        names = [re.sub(r"\s+", " ", _plain(x).strip().lower()) for x in items]
+        rank = lambda k: want.index(names[k]) if names[k] in want else len(want)
+        found |= {n for n in names if n in want}
+        order = sorted(range(len(items)), key=rank)  # stable: the other items keep their order
+        tail = l[len(l.rstrip("\r\n")):]
+        lines[i] = f'{m.group(1)}{", ".join(items[k] for k in order)}{m["end"]}{tail}'
+    return "".join(lines), [f for f, w in zip(first, want) if w not in found]
+
+
+def check_edit(original, new, allowed):
+    """Why a rewritten bullet is not allowed, or None. Truthfulness rules: no number that is not in the original, no
+    tool / skill keyword that is not already on the user's resume (or declared for this job), about the same length."""
+    if not new.strip() or new == original:
+        return "nothing changed"
+    extra_numbers = _numbers(_plain(new)) - _numbers(_plain(original))
+    if extra_numbers:
+        return f"new numbers {sorted(extra_numbers)} - only numbers from the original bullet are allowed"
+    if len(new) > len(original) * 1.15 + 20:
+        return "longer than the original (+15% max) - keep the resume's length"
+    import matchscore  # same folder (lazy)
+    extra = {k for k in matchscore.keywords(_plain(new)) - matchscore.keywords(_plain(original))
+             if k not in allowed}
+    if extra:
+        return f"names {sorted(extra)}, which are not on the resume - only reword with what the user really did"
+    return None
+
+
+def apply_revision(tex, rev):
+    """(new text, [entries reworded], [problems]) for a saved revision; edits whose text is gone are skipped."""
+    used, problems = [], []
+    for e in rev.get("edits") or []:
+        t2 = rewrite(tex, e.get("where"), e.get("original", ""), e.get("new", ""))
+        if t2 is None:
+            problems.append(f'{e.get("where")}: bullet text not found')
+        else:
+            tex, used = t2, used + [e.get("where")]
+    if rev.get("skillsFirst"):
+        tex, _missing = reorder_skills(tex, rev["skillsFirst"])
+    return tex, used, problems
+
+
+def brief(job):
+    """Everything Claude needs to revise this job's resume: posting, bullets (exact LaTeX), rules, edits-file format."""
+    st = settings()
+    tex = st["tex"].read_bytes().decode("utf-8")
+    lines = tex.splitlines()
+    out = [f'JOB: {job.get("company")} | {job.get("title")} | {job.get("location", "")}',
+           f'posting: {job.get("applyUrl") or job.get("url")}  (open it for the full text if the lines below are cut short)',
+           "", "POSTING TEXT (qualifications first):", (job.get("description") or "(none stored - open the posting)")[:6000], ""]
+    if job.get("addedSkills"):
+        out += ["KEYWORDS THE USER MARKED 'I have this' for this job (keep them in the resume): " + ", ".join(job["addedSkills"]), ""]
+    out += ["RESUME BULLETS (entry -> exact LaTeX; copy `original` text exactly from here):"]
+    for name, a, b in entries(tex):
+        out.append(f"  [{name}]")
+        out += [f"    {l.strip()}" for l in lines[a:b + 1] if "\\resumeItem{" in l]
+    out += ["", "TECHNICAL SKILLS LINES:"]
+    out += [f"    {l.strip()}" for l in lines if SKILL_LINE.match(l)]
+    out += ["", "RULES (the user applies with this resume, so it must be true):",
+            "  - Reword bullets so what the posting asks for comes first and is named the way the posting names it; keep the facts.",
+            "  - NO new numbers, tools, technologies, employers, titles or claims. Only skills already on the resume (or the keywords above).",
+            "  - About the same length per bullet (+15% max); at most 6 bullets changed; the resume stays on one page.",
+            "  - Do not change dates, titles, company names or education. Do not reword a bullet the posting does not relate to.",
+            "  - skillsFirst: Technical Skills items (already listed) the posting names; they move to the front of their line.",
+            "", "EDITS FILE (JSON):",
+            '  {"summary": "what you emphasised and why", "edits": [{"where": "<entry>", "original": "<exact LaTeX from the bullet>",',
+            '    "new": "<reworded LaTeX>"}], "skillsFirst": ["React", "SQL"]}',
+            f'then: python tailor.py revise {job["key"]} <edits.json>']
+    return "\n".join(out)
+
+
+def revise(job, spec):
+    """Check an edits file against the master resume and the rules. Returns (revision dict, None) or (None, error text)."""
+    st = settings()
+    tex = st["tex"].read_bytes().decode("utf-8")
+    import matchscore  # same folder
+    allowed = set(matchscore.profile()["skills"]) | set(job.get("addedSkills") or [])
+    edits = spec.get("edits") or []
+    if len(edits) > 6:
+        return None, "at most 6 bullets may be changed"
+    names = [n for n, _, _ in entries(tex)]
+    seen = set()
+    for e in edits:
+        where, original, new = e.get("where"), e.get("original", ""), e.get("new", "")
+        if where not in names:
+            return None, f"no resume entry {where!r} (entries: {', '.join(names)})"
+        if rewrite(tex, where, original, new) is None or (where, original) in seen:
+            return None, f"{where}: `original` must be copied exactly from one bullet of that entry (each bullet once)"
+        seen.add((where, original))
+        why = check_edit(original, new, allowed)
+        if why:
+            return None, f"{where}: {why}  [{original[:60]}...]"
+    first = [str(x) for x in spec.get("skillsFirst") or []]
+    if first:
+        _t, missing = reorder_skills(tex, first)
+        if missing:
+            return None, f"skillsFirst items not on any Technical Skills line: {', '.join(missing)} (move only listed items)"
+    return {"edits": [{"where": e["where"], "original": e["original"], "new": e["new"]} for e in edits],
+            "skillsFirst": first, "summary": str(spec.get("summary") or "")[:500]}, None
+
+
 def _compile(exe, out, stem, text):
     (out / f"{stem}.tex").write_bytes(text.encode("utf-8"))
     cmd = [exe, "-interaction=nonstopmode", "-halt-on-error", f"-jobname={stem}", f"{stem}.tex"]
@@ -212,7 +365,8 @@ def build(job, cfg=None):
     st = settings(cfg)
     keywords = list(job.get("addedSkills") or [])
     fail = lambda note: {"status": "failed", "pdf": str(st["masterPdf"]), "added": keywords, "note": note}
-    if not keywords or not st["enabled"]:
+    revision = job.get("revision") or None
+    if (not keywords and not revision) or not st["enabled"]:
         return {"status": "master", "pdf": str(st["masterPdf"]), "added": [], "note": "no added keywords - master resume"}
     if not st["tex"] or not st["tex"].exists():
         return fail("master .tex not found (resumeTailor.masterTex in the config)")
@@ -229,8 +383,19 @@ def build(job, cfg=None):
     except Exception:  # never block a build on the ordering
         pass
     on_skills = list(keywords)
+    revised, rev_problems, rev_on = [], [], bool(revision)
+
+    def prepare():
+        """Master + added Skills keywords + the AI revision (bullet rewrites, skills order)."""
+        nonlocal revised, rev_problems
+        b, pl_ = tailor_tex(master, on_skills)
+        revised, rev_problems = [], []
+        if rev_on:
+            b, revised, rev_problems = apply_revision(b, revision)
+        return b, pl_
+
     try:
-        base, placed = tailor_tex(master, on_skills)
+        base, placed = prepare()
     except ValueError as e:
         return fail(str(e))
     pl = load_placements()
@@ -256,6 +421,10 @@ def build(job, cfg=None):
         applied = [kw for kw, _ in used]
         if pages <= st["maxPages"]:
             break
+        if rev_on:  # too long: build without the AI revision first (it is optional), then shed keywords
+            rev_on = False
+            base, placed = prepare()
+            continue
         if applied:  # too long: leave the last rewrite out and build again
             last = applied[-1]
             dropped.insert(0, last)
@@ -264,8 +433,13 @@ def build(job, cfg=None):
         if len(on_skills) <= 1:
             break
         left_out.insert(0, on_skills.pop())  # still too long with no rewrites: drop the last added Skills keyword
-        base, placed = tailor_tex(master, on_skills)
+        base, placed = prepare()
     note = "added " + (", ".join(f"{k} -> {v}" for k, v in placed.items()) or "nothing new to Skills (already listed)")
+    if revision:
+        note += (f" | AI revision: {len(revised)} bullets reworded" + (f", skills order set" if revision.get("skillsFirst") else "")
+                 if rev_on else " | AI revision left out (resume would pass the page limit)")
+        if rev_problems:
+            note += f" | revision skipped: {'; '.join(rev_problems)}"
     if used:
         note += " | in experience: " + ", ".join(f"{kw} -> {w}" for kw, w in used)
     if dropped:
@@ -279,7 +453,7 @@ def build(job, cfg=None):
     if pages > st["maxPages"]:
         note += f" | WARNING: {pages} pages (more than {st['maxPages']})"
     return {"status": "ready", "pdf": str(out / f"{stem}.pdf"), "added": keywords, "placed": placed, "pages": pages,
-            "bullets": dict(used), "dropped": dropped, "leftOut": left_out, "needsPlacement": needs, "note": note}
+            "bullets": dict(used), "revised": revised if rev_on else [], "dropped": dropped, "leftOut": left_out, "needsPlacement": needs, "note": note}
 
 
 def place(keyword, where, original=None, new=None):
@@ -313,6 +487,34 @@ def main(argv):
             print(f'{kw}: {p.get("where")}' + (f'\n    was: {p["original"]}\n    now: {p["bullet"]}' if p.get("bullet") else ""))
         return 0
     import jobboard  # same folder (lazy: jobboard imports this module)
+    if argv[0] in ("brief", "revise") and len(argv) >= 2:
+        with jobboard.LOCK:
+            job = jobboard.load_board()["jobs"].get(argv[1])
+        if job is None:
+            print(f"{argv[1]}: not on the board")
+            return 1
+        if argv[0] == "brief":
+            print(brief(job))
+            return 0
+        if len(argv) != 3:
+            print("usage: python tailor.py revise <job key> <edits.json>")
+            return 1
+        try:
+            spec = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print(f"cannot read {argv[2]}: {e}")
+            return 1
+        rev, err = revise(job, spec)
+        if err:
+            print(f"REJECTED - {err}")
+            return 1
+        with jobboard.LOCK:
+            board = jobboard.load_board()
+            board["jobs"][argv[1]]["revision"] = {**rev, "at": jobboard.now_iso()}
+            board["jobs"][argv[1]].pop("resume", None)
+            jobboard.save_board(board)
+        print(f"revision saved: {len(rev['edits'])} bullets, skills first: {', '.join(rev['skillsFirst']) or '-'}")
+        return jobboard.build_resume(argv[1], wait=True)
     if argv[0] == "place" and len(argv) in (3, 5):
         err = place(*argv[1:])
         if err:

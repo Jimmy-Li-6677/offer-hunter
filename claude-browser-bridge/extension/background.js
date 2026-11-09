@@ -245,6 +245,26 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const INPUT_CMDS = new Set(["click", "type", "press_key", "select_option", "set_checked"]);
 
+
+// Claude's tabs live in their OWN Chrome window, opened without taking focus, so applying never switches the window
+// or tab the user is working in (the job board, other sites). Tabs are only made active inside that window.
+let claudeWindowId = null;
+async function createInClaudeWindow(url) {
+  if (claudeWindowId === null) {
+    try { claudeWindowId = (await chrome.storage.session.get("claudeWindowId")).claudeWindowId ?? null; } catch {}
+  }
+  if (claudeWindowId !== null) {
+    try {
+      await chrome.windows.get(claudeWindowId);
+      return await chrome.tabs.create({ windowId: claudeWindowId, url, active: true });
+    } catch { claudeWindowId = null; } // the window was closed: make a new one
+  }
+  const win = await chrome.windows.create({ url, focused: false, state: "normal", width: 1280, height: 900 });
+  claudeWindowId = win.id;
+  try { await chrome.storage.session.set({ claudeWindowId }); } catch {}
+  return win.tabs[0];
+}
+
 async function bringToFront(tabId) {
   try {
     const tab = await chrome.tabs.get(tabId);
@@ -785,7 +805,7 @@ async function handleCommand(cmd, a) {
     }
     case "open_tab": {
       await assertAllowed(a.url);
-      const tab = await chrome.tabs.create({ url: a.url, active: true });
+      const tab = await createInClaudeWindow(a.url);
       await waitForLoad(tab.id);
       const t = await chrome.tabs.get(tab.id);
       return { tabId: t.id, title: t.title, url: t.url };
