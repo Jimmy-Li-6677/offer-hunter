@@ -65,6 +65,7 @@ async function connect() {
 
   ws.onopen = () => {
     setBadge("connected");
+    remarkClaudeTabs();
     clearInterval(pingTimer);
     // Keep the MV3 service worker alive while connected.
     pingTimer = setInterval(() => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "ping" })), 20000);
@@ -84,7 +85,7 @@ async function connect() {
       if (INPUT_CMDS.has(msg.cmd) && msg.args?.tabId !== undefined) await bringToFront(msg.args.tabId);
       const result = await handleCommand(msg.cmd, msg.args ?? {});
       const touched = msg.cmd === "open_tab" ? result?.tabId : msg.cmd === "close_tab" || msg.cmd === "list_tabs" ? undefined : msg.args?.tabId;
-      if (touched !== undefined) markClaudeTab(touched);
+      if (touched !== undefined) markClaudeTab(touched).catch((e) => overlayLog({ tabId: touched, markError: String(e?.message ?? e).slice(0, 150) }));
       ws?.send(JSON.stringify({ id: msg.id, ok: true, result }));
     } catch (err) {
       ws?.send(JSON.stringify({ id: msg.id, ok: false, error: String(err?.message ?? err) }));
@@ -171,10 +172,13 @@ async function forgetClaudeTab(tabId) {
 }
 
 function isLocal(url) {
+  // Only the local job board (127.0.0.1 / localhost) is left unmarked. A tab that has just been created has no URL yet
+  // ("" while loading): that is NOT local - it used to be, so freshly opened job tabs never got the orange frame.
+  if (!url) return false;
   try {
     return ["127.0.0.1", "localhost"].includes(new URL(url).hostname);
   } catch {
-    return true; // chrome://, about:blank, ...
+    return false;
   }
 }
 
@@ -205,22 +209,44 @@ function pageOverlay() {
   (document.documentElement || document.body).appendChild(host);
 }
 
+// Diagnostic trail (chrome.storage.local "overlayLog", last 20 entries) - the frame used to fail silently.
+async function overlayLog(entry) {
+  try {
+    const { overlayLog: log = [] } = await chrome.storage.local.get("overlayLog");
+    log.push({ t: new Date().toISOString().slice(11, 19), ...entry });
+    await chrome.storage.local.set({ overlayLog: log.slice(-20) });
+  } catch {}
+}
+
 async function showOverlay(tabId) {
   try {
     await chrome.scripting.executeScript({ target: { tabId }, func: pageOverlay });
-  } catch {} // chrome:// pages, closed tabs, ...
+    await overlayLog({ tabId, via: "scripting", ok: true });
+    return;
+  } catch (e) {
+    await overlayLog({ tabId, via: "scripting", ok: false, err: String(e?.message ?? e).slice(0, 120) });
+  }
+  // Fallback: draw it through the debugger (the same channel every other command uses).
+  try {
+    await cdp(tabId, "Runtime.evaluate", { expression: `(${pageOverlay.toString()})()`, returnByValue: true });
+    await overlayLog({ tabId, via: "cdp", ok: true });
+  } catch (e) {
+    await overlayLog({ tabId, via: "cdp", ok: false, err: String(e?.message ?? e).slice(0, 120) });
+  }
 }
 
 async function markClaudeTab(tabId) {
+  await overlayLog({ tabId, enter: true });
   const cfg = await getConfig();
-  if (!cfg.highlightTabs || tabId === undefined) return;
+  if (!cfg.highlightTabs || tabId === undefined) { await overlayLog({ tabId, skipped: "off", highlightTabs: cfg.highlightTabs }); return; }
   let tab;
   try {
     tab = await chrome.tabs.get(tabId);
-  } catch {
+  } catch (e) {
+    await overlayLog({ tabId, tabsGetError: String(e?.message ?? e).slice(0, 120) });
     return;
   }
-  if (isLocal(tab.url || tab.pendingUrl || "")) return;
+  if (isLocal(tab.url || tab.pendingUrl || "")) { await overlayLog({ tabId, skipped: "local", url: (tab.url || tab.pendingUrl || "").slice(0, 60) }); return; }
   const ids = await claudeTabs();
   if (!ids.has(tabId)) {
     ids.add(tabId);
@@ -230,6 +256,14 @@ async function markClaudeTab(tabId) {
     await groupTab(tab);
   } catch {}
   await showOverlay(tabId);
+}
+
+// After a (re)connect, put the frame back on every tab Claude has used (the frame is lost when the extension reloads).
+async function remarkClaudeTabs() {
+  try {
+    const ids = await claudeTabs();
+    for (const id of ids) markClaudeTab(id);
+  } catch {}
 }
 
 // Pages reload / navigate: put the frame back on Claude's tabs.
