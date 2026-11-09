@@ -265,8 +265,52 @@ def microsoft_detail(j):
     return _plain((_try(j["_detail"]) or {}).get("job_description"))
 
 
+# ---------- the company's own career site (server-rendered "SearchJobs / JobDetail" pages, e.g. Deloitte) ----------
+
+def _get_html(url, timeout=30):
+    req = urllib.request.Request(url, headers=UA)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+def careersite(c, query, pages):
+    """c["site"] = the careers base, e.g. https://apply.deloitte.com/en_US/careers. Lists SearchJobs/<query>, then reads
+    each posting's JobPosting JSON-LD (the list has no date): posted date + full text."""
+    base = c["site"].rstrip("/")
+    out, per = [], 10
+    for page in range(pages):
+        try:
+            h = _get_html(f"{base}/SearchJobs/{urllib.parse.quote(query)}?listFilterMode=1&jobSort=relevancy"
+                          f"&jobRecordsPerPage={per}&jobOffset={page * per}")
+        except (OSError, http.client.HTTPException):
+            break
+        arts = re.findall(r'<article class="article--result.*?</article>', h, re.S)
+        for a in arts:
+            m = re.search(r'href="([^"]*/JobDetail/[^"]+/(\d+))"[^>]*>\s*(.*?)\s*</a>', a, re.S)
+            if not m:
+                continue
+            spans = [_plain(s) for s in re.findall(r"<span>(.*?)</span>", a, re.S)]
+            loc = spans[-1] if spans else ""
+            out.append(_job(c, m.group(2), _plain(m.group(3)), loc, None, m.group(1), extra={"_detail": m.group(1)}))
+        if len(arts) < per:
+            break
+
+    def read(j):
+        try:
+            ld = re.search(r'application/ld\+json[^>]*>(.*?)</script>', _get_html(j["_detail"]), re.S)
+            d = json.loads(ld.group(1)) if ld else {}
+        except (OSError, ValueError, http.client.HTTPException):
+            return
+        if d.get("datePosted"):
+            j["posted"] = _not_future(d["datePosted"] + "T12:00:00+00:00")
+        j["_text"] = _plain(d.get("description") or d.get("qualifications"))
+    with concurrent.futures.ThreadPoolExecutor(6) as ex:
+        list(ex.map(read, out))
+    return out
+
+
 FETCH = {"workday": workday, "greenhouse": greenhouse, "lever": lever, "ashby": ashby, "oracle": oracle,
-         "amazon": amazon, "microsoft": microsoft}
+         "amazon": amazon, "microsoft": microsoft, "careersite": careersite}
 DETAIL = {"workday": workday_detail, "oracle": oracle_detail, "microsoft": microsoft_detail}
 
 
@@ -332,7 +376,7 @@ def candidates(board_jobs, cfg=None, log=print):
             except Exception:
                 failed.add(futures[f]["name"])
     seen = {(applog.norm(j.get("company")), applog.norm(j.get("title"))) for j in board_jobs.values() if j}
-    multi = re.compile(r"\d+\s+Locations?", re.I)
+    multi = re.compile(r"(?:\d+|multiple)\s+Locations?", re.I)
     software = re.compile(s["titleInclude"] or ".", re.I)  # the role's titles (config), or every title
     not_role = re.compile(s["titleExclude"], re.I) if s.get("titleExclude") else None  # e.g. hardware / lab titles
     first = []

@@ -283,9 +283,7 @@
     <h1>Job Board</h1>
     <span class="meta" id="meta">Loading…</span>
     <span class="spacer"></span>
-    <button class="primary" data-search="google" title="Claude searches Google Jobs in a new Chrome tab and adds about 10 candidates here">Search Google Jobs</button>
     <button id="answersBtn" title="Upload your resume and review the answers Claude uses on application forms">Update my answers</button>
-    <button class="primary" data-search="linkedin" title="Claude searches LinkedIn in a new Chrome tab and adds about 10 candidates here">Search LinkedIn</button>
     <button class="primary" data-search="simplify" title="Adds about 10 new-grad jobs from the SimplifyJobs GitHub list (github.com/SimplifyJobs/New-Grad-Positions) that pass your search filters">Search SimplifyJobs</button>
     <button class="primary" data-search="company" title="Jobs straight from Fortune 500 / large companies' own career sites (Workday, Amazon, Microsoft, JPMorgan ...): the list is companyJobs in your config. No Claude needed, takes about a minute">Search company sites</button>
     <button class="primary" data-search="simplifysite" title="Search the simplify.jobs website: choose location, salary, work mode etc. and paste the page's X-TYPESENSE-API-KEY header">Search Simplify website</button>
@@ -635,6 +633,8 @@ function openSimplify() {
   try { p = JSON.parse(localStorage.getItem(SS_PREFS) || "{}"); } catch (e) { /* storage blocked: defaults */ }
   $("ssKey").value = "";
   $("ssKey").required = !d.keySaved;
+  $("ssKey").placeholder = d.keySaved ? "✓ Saved key loaded from private\\.env - leave blank to use it (paste only to replace it)"
+    : "x-typesense-api-key: ...";
   $("ssKeyHelp").textContent = (d.keySaved ? "A key is saved - leave this blank to reuse it, or paste a new one if the search fails. " : "") +
     "On simplify.jobs press F12 > Network > Fetch/XHR, search for a job, click the multi_search request and copy " +
     "its Request Headers (the whole block or just the x-typesense-api-key line).";
@@ -739,13 +739,21 @@ function filtered() {
     title: (a, b) => (a.title || "").localeCompare(b.title || ""),
     location: (a, b) => (a.location || "").localeCompare(b.location || ""),
   }[by];
-  return list.sort(cmp);
+  list.sort(cmp);
+  // after a keyword click the cards keep the order they had, so the card being worked on doesn't jump when its score
+  // changes; the order is released by the next sort / filter / tab / page change
+  if (state.pinOrder) {
+    const at = new Map(state.pinOrder.map((k, i) => [k, i]));
+    const pos = j => (at.has(j.key) ? at.get(j.key) : Infinity);
+    list.sort((a, b) => (pos(a) === pos(b) ? 0 : pos(a) - pos(b)));  // stable: new jobs keep their normal order, last
+  }
+  return list;
 }
 
 // location / salary dropdowns and the "hide jobs that fail a filter" checkboxes - only for jobs still to review
 // (queued, waiting and finished jobs are always shown)
 function passes(j) {
-  if (j.status !== "new") return true;
+  if (j.status !== "new" || j.key === state.pinKey) return true;  // the card you are editing stays visible
   const area = $("area").value, pay = $("pay").value;
   if (area === "~other" ? (j.areas || []).length : area && !(j.areas || []).includes(area)) return false;
   if (pay === "listed" && j.payMax == null) return false;
@@ -783,7 +791,7 @@ function render() {
 
   const list = filtered();
   if (!state.jobs.length) {
-    $("list").innerHTML = `<div class="empty">No jobs on the board yet.<br>Click <b>Search Google Jobs</b>, <b>Search LinkedIn</b> or <b>Search SimplifyJobs</b> - Claude finds about 10 candidates for you to approve.</div>`;
+    $("list").innerHTML = `<div class="empty">No jobs on the board yet.<br>Click <b>Search company sites</b>, <b>Search SimplifyJobs</b> or <b>Search Simplify website</b> to find candidates to approve.</div>`;
   } else if (!list.length) {
     const msg = state.hiddenCount ? `All ${state.hiddenCount} jobs in this view are hidden by your location / salary / level / filter choices.`
       : state.tab === "review" ? "Nothing new to review. Click a search button for new candidates." : "No jobs in this view.";
@@ -1055,7 +1063,7 @@ async function removeAll() {
   clearTimeout(state.armTimer); state.armRemove = false;
   const keys = filtered().map(j => j.key);
   keys.forEach(k => state.checked.delete(k));
-  try { const r = await api("/api/remove", { keys }); showError(""); state.page = 0; apply(r); }
+  try { const r = await api("/api/remove", { keys }); showError(""); state.page = 0; state.pinOrder = null; state.pinKey = null; apply(r); }
   catch (e) { showError("Could not remove the jobs: " + e.message + ". Is the job board server still running?"); render(); }
 }
 async function choose(keys, choice) {
@@ -1073,7 +1081,7 @@ async function move(key, dir) {
 document.addEventListener("click", e => {
   const t = e.target.closest("button");
   if (!t) return;
-  if (t.dataset.tab) { state.tab = t.dataset.tab; state.page = 0; render(); return; }
+  if (t.dataset.tab) { state.tab = t.dataset.tab; state.page = 0; state.pinOrder = null; state.pinKey = null; render(); return; }
   if (t.dataset.page) { state.page = Number(t.dataset.page); render(); window.scrollTo(0, 0); return; }
   const act = t.dataset.act, key = t.dataset.key;
   if (act === "removeall") { removeAll(); return; }
@@ -1088,12 +1096,14 @@ document.addEventListener("click", e => {
 });
 async function setSkill(key, name, add, btn) {
   btn.disabled = true;
+  if (!state.pinOrder) state.pinOrder = filtered().map(j => j.key);  // freeze the current card order
+  state.pinKey = key;
   try { apply(await api("/api/skill", { key, name, add })); showError(""); }
   catch (e) { btn.disabled = false; showError("Could not save the keyword: " + e.message); }
 }
 document.addEventListener("change", e => {
   const f = e.target.dataset && e.target.dataset.filter;
-  if (f !== undefined) { e.target.checked ? state.hide.add(f) : state.hide.delete(f); state.page = 0; savePrefs(); render(); return; }
+  if (f !== undefined) { e.target.checked ? state.hide.add(f) : state.hide.delete(f); state.page = 0; state.pinOrder = null; state.pinKey = null; savePrefs(); render(); return; }
   const k = e.target.dataset && e.target.dataset.check;
   if (k === undefined) return;
   e.target.checked ? state.checked.add(k) : state.checked.delete(k);
@@ -1104,10 +1114,10 @@ $("bulkSkip").onclick = () => { const k = [...state.checked]; state.checked.clea
 $("bulkClear").onclick = () => { state.checked.clear(); render(); };
 let resizeTimer;
 window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 150); });
-["q", "source"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; render(); }));
-["area", "pay", "level", "size", "payNone", "minMatch", "sort"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; savePrefs(); render(); }));
-$("filtersAll").onclick = () => { state.filters.forEach(f => state.hide.add(f.id)); state.page = 0; savePrefs(); render(); };
-$("filtersNone").onclick = () => { state.hide.clear(); state.page = 0; savePrefs(); render(); };
+["q", "source"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; state.pinOrder = null; state.pinKey = null; render(); }));
+["area", "pay", "level", "size", "payNone", "minMatch", "sort"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; state.pinOrder = null; state.pinKey = null; savePrefs(); render(); }));
+$("filtersAll").onclick = () => { state.filters.forEach(f => state.hide.add(f.id)); state.page = 0; state.pinOrder = null; state.pinKey = null; savePrefs(); render(); };
+$("filtersNone").onclick = () => { state.hide.clear(); state.page = 0; state.pinOrder = null; state.pinKey = null; savePrefs(); render(); };
 loadPrefs();
 
 document.querySelectorAll("[data-search]").forEach(b => { b.onclick = () => requestSearch(b.dataset.search); });
