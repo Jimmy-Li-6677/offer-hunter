@@ -275,7 +275,26 @@ def qual_sections(text):
 _LABELS = re.compile(r"(?:^|(?<=[.;\]]) )(Requirements|Preferred|Responsibilities|Skills|Description): ")
 
 
+def _move_plus(req, des):
+    """Sentences / bullets inside the required text that call themselves optional ('... is a plus', 'nice to have',
+    'bonus', 'a 'Why you might stand out' list) belong to the desired part."""
+    keep, moved, stand_out = [], [], False
+    for piece in re.split(r"(?<=[.;])\s+|\s*;\s*|\n+", req or ""):
+        if re.search(r"why you might stand out|what (?:will )?(?:set|sets) you apart|\bto stand out\b", piece, re.I):
+            stand_out = True
+        if stand_out or re.search(r"\ba plus\b|\b(?:is|are|would be|will be)\s+an?\s+(?:big\s+|huge\s+)?(?:bonus|advantage)\b|\bnice[- ]to[- ]have\b|\bbonus points?\b", piece, re.I):
+            moved.append(piece)
+        else:
+            keep.append(piece)
+    return " ".join(keep), f"{des or ''} {' '.join(moved)}"
+
+
 def split_text(desc):
+    req, des = _split_text(desc)
+    return _move_plus(req, des)
+
+
+def _split_text(desc):
     """(required text, desired text) the match score reads: only the job's qualifications.
     - Simplify / company-page jobs are saved as 'Requirements: ... Preferred: ... [Responsibilities: ...] [Skills: ...]
       Description: <whole posting>': Simplify's two lists (pulled from the posting's Minimum / Preferred Qualifications)
@@ -321,11 +340,14 @@ def score(j, prof):
         # Simplify tags skills from the whole posting: only those the qualifications themselves name count
         if not re.search(rf"(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])", qual_text, re.I) and not (terms(name) & terms(qual_text)):
             continue
+        # a name only the 'plus / preferred' text mentions is desired, not required
+        in_req = bool(re.search(rf"(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])", req_text, re.I)) or bool(terms(name) & terms(req_text))
         canon = terms(name) or skillbank.find(name)
         if canon:
-            required |= canon - desired
-        elif name and name not in required:
-            required.add(name)
+            required |= canon - desired if in_req else set()
+            desired |= (canon - required) if not in_req else set()
+        elif name and name not in required and name not in desired:
+            (required if in_req else desired).add(name)
             if re.search(rf"(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])", prof.get("text", ""), re.I):
                 have.add(name)
     found = sorted(required) + sorted(desired)
@@ -338,12 +360,27 @@ def score(j, prof):
     if not found:
         return {"score": None, "label": "None", "matched": [], "missing": [], "added": [], "found": 0,
                 "required": [0, 0], "desired": [0, 0]}
-    value = round(100 * len(matched) / len(found))
+    # two separate scores (user 2026-11-09): BASIC = share of the post's required / minimum keywords on the resume (this is
+    # the 'score' the board sorts by and the Schedule's auto-queue uses); STAND-OUT = share of its preferred / "is a plus"
+    # keywords on the resume (prefScore, shown apart, never lowers the basic score). A post with no required keywords falls
+    # back to all of its keywords for the basic score.
+    explain = {t: _explain(t, have) for t in missing}
+    similar = [t for t in missing if explain[t]["similar"]]
+    base = required if required else set(found)
+    base_have = len(base & have)
+    base_sim = len([t for t in similar if t in base])
+    value = round(100 * base_have / len(base))
+    sim_value = round(100 * (base_have + base_sim) / len(base))
     label = "Strong" if value >= 80 else "Good" if value >= 65 else "Fair" if value >= 50 else "Low"
-    return {"score": value, "label": label, "matched": matched, "missing": missing, "added": added, "found": len(found),
+    pref_have = len(desired & have)
+    pref_sim = len([t for t in similar if t in desired])
+    pref_value = round(100 * pref_have / len(desired)) if desired and required else None
+    pref_sim_value = round(100 * (pref_have + pref_sim) / len(desired)) if desired and required else None
+    return {"score": value, "simScore": sim_value, "similar": similar, "label": label, "matched": matched,
+            "prefScore": pref_value, "prefSimScore": pref_sim_value,
+            "missing": missing, "added": added, "found": len(found),
             "required": [len(required & have), len(required)], "desired": [len(desired & have), len(desired)],
-            # what each missing keyword is + similar skills already on the resume (glossary.py, for the card's list)
-            "explain": {t: _explain(t, have) for t in missing},
+            "explain": explain,
             "requiredMissing": [t for t in missing if t in required]}
 
 

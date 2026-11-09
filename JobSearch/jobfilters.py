@@ -79,7 +79,7 @@ def context(cfg=None, env=None, log_jobs=None, skipped_keys=(), hours=None, max_
         "skip": [applog.norm(c) for c in env.get("SKIP_COMPANIES", "").split(",") if c.strip()],
         "staffing": [applog.norm(c) for c in fc.get("staffingAgencies", []) if c.strip()],
         "log": log_jobs, "skippedKeys": set(skipped_keys),
-        "sentToday": [e for e in log_jobs if e.get("status") == "Submitted" and e.get("date") == today],
+        "sentToday": [e for e in log_jobs if e.get("status") in applog.SENT_STATUSES and e.get("date") == today],
     }
 
 

@@ -8,6 +8,11 @@ How it reads mail: Microsoft Graph (the official Outlook.com / Microsoft 365 mai
 permission only - it can read messages, it cannot send, move or delete anything. You sign in once (`login`); the
 sign-in is saved in ..\\private\\mail-token.json (gitignored) and renewed automatically.
 
+Simplest setup, no Azure: IMAP with an app password. In the mailbox's Microsoft/Google account turn on two-step verification, create an
+app password, then put in ..\private\.env: MAIL_IMAP_PASSWORD=<app password> (and MAIL_IMAP_USER=<mailbox address> if it is not
+APPLICANT_EMAIL; MAIL_IMAP_HOST defaults to outlook.office365.com, Gmail: imap.gmail.com). Reading is read-only (BODY.PEEK).
+
+Or, with Microsoft Graph:
 One-time setup (about 5 minutes):
   1. Register a free app: https://entra.microsoft.com -> Applications -> App registrations -> New registration.
      Name: offer-hunter mail. Supported account types: "Personal Microsoft accounts only" (outlook.com / hotmail)
@@ -96,8 +101,69 @@ def _get(url, tok):
         return json.loads(r.read().decode("utf-8", "replace"))
 
 
+def imap_on():
+    """IMAP mode (no Azure needed): MAIL_IMAP_PASSWORD = an app password of the job-application mailbox."""
+    return bool(_env("MAIL_IMAP_PASSWORD"))
+
+
+def imap_messages(since):
+    """Same as messages() but over IMAP (read-only: the mailbox is opened with readonly=True)."""
+    import email
+    import email.utils
+    import imaplib
+    from email.header import decode_header, make_header
+    host = _env("MAIL_IMAP_HOST") or "outlook.office365.com"
+    user = _env("MAIL_IMAP_USER") or _env("APPLICANT_EMAIL")
+    conn = imaplib.IMAP4_SSL(host, 993, timeout=30)
+    conn.login(user, _env("MAIL_IMAP_PASSWORD"))
+    out = []
+    try:
+        for folder in ("INBOX", "Junk", "[Gmail]/Spam", "Junk Email"):
+            try:
+                if conn.select(f'"{folder}"', readonly=True)[0] != "OK":
+                    continue
+                day = since.astimezone(UTC).strftime("%d-%b-%Y")
+                typ, data = conn.search(None, "SINCE", day)
+                ids = (data[0] or b"").split()[-25:]
+            except imaplib.IMAP4.error:
+                continue
+            for i in ids:
+                typ, parts = conn.fetch(i, "(BODY.PEEK[])")
+                if typ != "OK" or not parts or not isinstance(parts[0], tuple):
+                    continue
+                msg = email.message_from_bytes(parts[0][1])
+                when = email.utils.parsedate_to_datetime(msg.get("Date")) if msg.get("Date") else None
+                if when is None:
+                    continue
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=UTC)
+                if when < since:
+                    continue
+                body = ""
+                for part in msg.walk():
+                    if part.get_content_type() in ("text/html", "text/plain") and not part.get_filename():
+                        txt = part.get_payload(decode=True)
+                        if txt:
+                            txt = txt.decode(part.get_content_charset() or "utf-8", "replace")
+                            if part.get_content_type() == "text/html" or not body:
+                                body = txt
+                name, addr = email.utils.parseaddr(msg.get("From", ""))
+                subj = str(make_header(decode_header(msg.get("Subject", ""))))
+                out.append({"subject": subj, "from": {"emailAddress": {"address": addr, "name": name}},
+                            "receivedDateTime": when.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                            "body": {"content": body}, "bodyPreview": re.sub(r"<[^>]+>", " ", body)[:200]})
+    finally:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+    return sorted(out, key=lambda m: m["receivedDateTime"], reverse=True)
+
+
 def messages(since, tok):
     """Messages received after `since` in the inbox and the junk folder, newest first."""
+    if imap_on():
+        return imap_messages(since)
     stamp = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     query = urllib.parse.urlencode({"$filter": f"receivedDateTime ge {stamp}", "$orderby": "receivedDateTime desc",
                                     "$select": "subject,from,receivedDateTime,body,bodyPreview", "$top": "25"})
@@ -151,7 +217,7 @@ def _result(m):
 
 
 def latest(words, minutes):
-    tok = token()
+    tok = None if imap_on() else token()
     since = dt.datetime.now(UTC) - dt.timedelta(minutes=minutes)
     found = [m for m in messages(since, tok) if _matches(m, words)]
     return _result(found[0]) if found else None
@@ -161,7 +227,7 @@ def wait(words, since, every, timeout):
     """Check every `every` seconds until a matching mail newer than `since` arrives (or `timeout` seconds pass)."""
     end = time.time() + timeout
     while True:
-        tok = token()
+        tok = None if imap_on() else token()
         found = [m for m in messages(since, tok) if _matches(m, words)]
         if found:
             return _result(found[0])
@@ -181,6 +247,8 @@ def main():
     a = ap.parse_args()
     words = [w.strip() for w in a.match.split(",") if w.strip()]
     if a.cmd == "login":
+        if imap_on():
+            return print("IMAP mode: no sign-in needed (MAIL_IMAP_PASSWORD is set). Test: python mailcheck.py latest --minutes 600")
         return login()
     if a.cmd == "latest":
         r = latest(words, a.minutes)

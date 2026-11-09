@@ -426,7 +426,7 @@ server.tool(
 
 // Types a private value from <workspace>/private/.env (loaded into process.env by loadConfig) into a password field.
 // The value never goes back to Claude or into the call log: only the field ref and the key name do.
-const SECRET_NAMES = ["APPLICANT_PASSWORD"] as const;
+const SECRET_NAMES = ["APPLICANT_PASSWORD", "APPLICANT_PASSWORD_ALT"] as const;
 
 server.tool(
   "type_secret",
