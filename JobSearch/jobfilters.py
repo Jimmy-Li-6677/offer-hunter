@@ -50,6 +50,22 @@ def compile_any(patterns):
     return re.compile("|".join(f"(?:{p})" for p in patterns), re.I) if patterns else None
 
 
+_STATES = ("Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|"
+           "Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|"
+           "Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|"
+           "Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming|"
+           "District of Columbia")
+_ABBR = ("AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|"
+         "TN|TX|UT|VT|VA|WA|WV|WI|WY|DC")
+_US = re.compile(r"\b(?:United States(?: of America)?|U\.S\.A?|USA|US)\b|\b(?:" + _STATES + r")\b|,\s*(?:" + _ABBR + r")(?![A-Za-z])")
+
+
+def is_us(location):
+    """True when a location text names the US: 'United States' / 'USA', a state name or ', CA'-style state code
+    (Washington - Seattle Campus, Remote - USA, Culver City, California). A non-US country in the text wins."""
+    return bool(location and _US.search(location))
+
+
 def context(cfg=None, env=None, log_jobs=None, skipped_keys=(), hours=None, max_years="config", now=None):
     """Everything the checks need, read once per run / page load."""
     cfg = cfg if cfg is not None else json.loads(CONFIG.read_text(encoding="utf-8"))
@@ -76,6 +92,7 @@ def context(cfg=None, env=None, log_jobs=None, skipped_keys=(), hours=None, max_
         "titleIn": compile_any(fc.get("titleInclude", [])), "titleOut": compile_any(fc.get("titleExclude", [])),
         "locIn": compile_any(fc.get("locationInclude", [])), "nonUs": compile_any(fc.get("remoteExcludeLocations", [])),
         "vague": compile_any(fc.get("locationVague", [])),
+        "companyAnyUs": bool(cfg.get("companyJobs", {}).get("anyUsLocation", True)),
         "skip": [applog.norm(c) for c in env.get("SKIP_COMPANIES", "").split(",") if c.strip()],
         "staffing": [applog.norm(c) for c in fc.get("staffingAgencies", []) if c.strip()],
         "log": log_jobs, "skippedKeys": set(skipped_keys),
@@ -118,7 +135,10 @@ def check(j, ctx, key=None):
     remote = j.get("remote") or bool(re.search(r"\b(anywhere|remote)\b", location, re.I))
     parts = re.split(r"\s*[;/|]\s*|\s+or\s+", location)
     if not remote and not any(ctx["locIn"] and ctx["locIn"].search(p) for p in parts):
-        if ctx["vague"] and ctx["vague"].fullmatch(location):
+        # company career sites (companyJobs.anyUsLocation, default on): any job in the US counts, not only the listed areas
+        if j.get("source") == "company" and ctx.get("companyAnyUs") and "nonUs" not in out and is_us(location):
+            pass
+        elif ctx["vague"] and ctx["vague"].fullmatch(location):
             check_location = True
         else:
             out.append("location")

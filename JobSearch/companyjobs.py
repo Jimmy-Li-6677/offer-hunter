@@ -78,7 +78,19 @@ def _iso(d):
 
 
 def _days_ago(n):
-    return _iso(dt.datetime.now(UTC).replace(hour=12, minute=0, second=0, microsecond=0) - dt.timedelta(days=n))
+    """Date-only postings ("Posted Yesterday") are stored as the END of that day (23:59 UTC; never later than now), so a job
+    posted late yesterday is not missed by a round that looks at the time since the previous round."""
+    return _iso(dt.datetime.now(UTC).replace(hour=23, minute=59, second=0, microsecond=0) - dt.timedelta(days=n))
+
+
+def _is_older(posted, cutoff):
+    """True when a posting's time is known and before the cutoff (no cutoff / unknown time: False)."""
+    if not cutoff or not posted:
+        return False
+    try:
+        return dt.datetime.fromisoformat(posted) < cutoff
+    except ValueError:
+        return False
 
 
 def _not_future(iso):
@@ -125,21 +137,34 @@ def _wd_posted(s):
     return _days_ago(int(m.group(1))) if m else None
 
 
-def workday(c, query, pages):
+def workday(c, query, pages, cutoff=None):
+    """cutoff (a scheduled round: only jobs posted since the last round): the listing is NOT always newest-first (Adobe and
+    Boeing rank by relevance, Capital One by date), so every page of the search is read (up to `pages`) and the job dates are
+    compared afterwards; the search stops early only when the listing has proved to be date-sorted (no page so far had a job
+    newer than the one before it) and a whole page is older than the cutoff."""
     host, tenant, site = _wd_parts(c)
-    out = []
+    out, breaks, prev_rank = [], 0, None
     for page in range(pages):
         d = _try(f"https://{host}/wday/cxs/{tenant}/{site}/jobs",
                  {"appliedFacets": {}, "limit": 20, "offset": page * 20, "searchText": query})
         posts = (d or {}).get("jobPostings") or []
+        page_jobs = []
         for p in posts:
             path = p.get("externalPath") or ""
             if not path:
                 continue
-            out.append(_job(c, path.rsplit("_", 1)[-1] if "_" in path else path, p.get("title", ""),
-                            p.get("locationsText", ""), _wd_posted(p.get("postedOn")), f"https://{host}/{site}{path}",
-                            extra={"_detail": f"https://{host}/wday/cxs/{tenant}/{site}{path}"}))
+            j = _job(c, path.rsplit("_", 1)[-1] if "_" in path else path, p.get("title", ""),
+                     p.get("locationsText", ""), _wd_posted(p.get("postedOn")), f"https://{host}/{site}{path}",
+                     extra={"_detail": f"https://{host}/wday/cxs/{tenant}/{site}{path}"})
+            page_jobs.append(j)
+            rank = j["posted"] or ""
+            if prev_rank is not None and rank > prev_rank:
+                breaks += 1  # a job newer than the one before it: not date-sorted
+            prev_rank = rank
+        out += page_jobs
         if len(posts) < 20:
+            break
+        if cutoff and page_jobs and not breaks and all(_is_older(j["posted"], cutoff) for j in page_jobs):
             break
     return out
 
@@ -157,7 +182,7 @@ def workday_detail(j):
 
 # ---------- Greenhouse / Lever / Ashby ----------
 
-def greenhouse(c, query, pages):
+def greenhouse(c, query, pages, cutoff=None):
     d = _try(f'https://boards-api.greenhouse.io/v1/boards/{c["board"]}/jobs?content=true') or {}
     out = []
     for p in d.get("jobs") or []:
@@ -169,7 +194,7 @@ def greenhouse(c, query, pages):
     return out
 
 
-def lever(c, query, pages):
+def lever(c, query, pages, cutoff=None):
     d = _try(f'https://api.lever.co/v0/postings/{c["board"]}?mode=json') or []
     out = []
     for p in d if isinstance(d, list) else []:
@@ -182,7 +207,7 @@ def lever(c, query, pages):
     return out
 
 
-def ashby(c, query, pages):
+def ashby(c, query, pages, cutoff=None):
     d = _try(f'https://api.ashbyhq.com/posting-api/job-board/{c["board"]}') or {}
     out = []
     for p in d.get("jobs") or []:
@@ -200,19 +225,24 @@ def _words_match(query, title):
 
 # ---------- Oracle Recruiting Cloud ----------
 
-def oracle(c, query, pages):
+def oracle(c, query, pages, cutoff=None):
     base, site = c["site"].rstrip("/"), c["siteNumber"]
-    finder = f'findReqs;siteNumber={site},keyword="{query}",sortBy=POSTING_DATES_DESC,limit=25'
-    d = _try(f"{base}/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList"
-             f"&finder={urllib.parse.quote(finder, safe='=;,')}") or {}
     out = []
-    for item in d.get("items") or []:
-        for r in item.get("requisitionList") or []:
-            posted = f'{r["PostedDate"]}T12:00:00+00:00' if r.get("PostedDate") else None
-            out.append(_job(c, r["Id"], r.get("Title", ""), r.get("PrimaryLocation", ""), posted,
-                            f'{base}/hcmUI/CandidateExperience/en/sites/{site}/job/{r["Id"]}',
-                            extra={"_detail": f'{base}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?'
-                                              f'expand=all&onlyData=true&finder=ById;Id=%22{r["Id"]}%22,siteNumber={site}'}))
+    for page in range(pages if cutoff else 1):  # a scheduled round pages on (newest first) until the cutoff
+        finder = (f'findReqs;siteNumber={site},keyword="{query}",sortBy=POSTING_DATES_DESC,limit=25,offset={page * 25}')
+        d = _try(f"{base}/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList"
+                 f"&finder={urllib.parse.quote(finder, safe='=;,')}") or {}
+        page_jobs = []
+        for item in d.get("items") or []:
+            for r in item.get("requisitionList") or []:
+                posted = _not_future(f'{r["PostedDate"]}T23:59:00+00:00') if r.get("PostedDate") else None
+                page_jobs.append(_job(c, r["Id"], r.get("Title", ""), r.get("PrimaryLocation", ""), posted,
+                                      f'{base}/hcmUI/CandidateExperience/en/sites/{site}/job/{r["Id"]}',
+                                      extra={"_detail": f'{base}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?'
+                                                        f'expand=all&onlyData=true&finder=ById;Id=%22{r["Id"]}%22,siteNumber={site}'}))
+        out += page_jobs
+        if len(page_jobs) < 25 or (cutoff and all(_is_older(j["posted"], cutoff) for j in page_jobs)):
+            break
     return out
 
 
@@ -226,7 +256,7 @@ def oracle_detail(j):
 
 # ---------- Amazon / Microsoft ----------
 
-def amazon(c, query, pages):
+def amazon(c, query, pages, cutoff=None):
     out = []
     for page in range(pages):
         d = _try("https://www.amazon.jobs/en/search.json?" + urllib.parse.urlencode(
@@ -234,7 +264,8 @@ def amazon(c, query, pages):
         for p in d.get("jobs") or []:
             try:
                 posted = _iso(dt.datetime.strptime(re.sub(r"\s+", " ", p.get("posted_date", "")), "%B %d, %Y")
-                              .replace(hour=12, tzinfo=UTC))
+                              .replace(hour=23, minute=59, tzinfo=UTC))
+                posted = _not_future(posted)
             except ValueError:
                 posted = None
             text = (f'Basic Qualifications: {_plain(p.get("basic_qualifications"))}. '
@@ -244,10 +275,12 @@ def amazon(c, query, pages):
                             posted, "https://www.amazon.jobs" + p.get("job_path", ""), text=text))
         if len(d.get("jobs") or []) < 50:
             break
+        if cutoff and out and all(_is_older(j["posted"], cutoff) for j in out[-50:]):
+            break  # sort=recent: the rest of the search is older
     return out
 
 
-def microsoft(c, query, pages):
+def microsoft(c, query, pages, cutoff=None):
     out = []
     for page in range(pages):
         d = _try("https://apply.careers.microsoft.com/api/pcsx/search?" + urllib.parse.urlencode(
@@ -262,6 +295,8 @@ def microsoft(c, query, pages):
                             extra={"_detail": f'https://apply.careers.microsoft.com/api/apply/v2/jobs/{p["id"]}?domain=microsoft.com'}))
         if len(posts) < 10:
             break
+        if cutoff and out and all(_is_older(j["posted"], cutoff) for j in out[-10:]):
+            break  # sort_by=timestamp: the rest of the search is older
     return out
 
 
@@ -277,7 +312,7 @@ def _get_html(url, timeout=30):
         return r.read().decode("utf-8", "replace")
 
 
-def careersite(c, query, pages):
+def careersite(c, query, pages, cutoff=None):
     """c["site"] = the careers base, e.g. https://apply.deloitte.com/en_US/careers. Lists SearchJobs/<query> newest first
     (jobSort=datePosted), then reads each posting's JobPosting JSON-LD for the full text. The list shows no date and the
     JSON-LD datePosted is the ORIGINAL posting date (Deloitte refreshes postings: one the site lists among its newest was
@@ -362,23 +397,37 @@ def search_queries(s):
     return list(s["queries"]) + [x for x in s["siteQueries"] if x not in s["queries"]]
 
 
-def candidates(board_jobs, cfg=None, log=print):
-    """(jobs to add, note). board_jobs = the board's jobs + removed keys (already seen: left out)."""
+def candidates(board_jobs, cfg=None, log=print, since=None, seen_ids=None):
+    """(jobs to add, note). board_jobs = the board's jobs + removed keys (already seen: left out).
+
+    since (a datetime) = a scheduled round: look ONLY at jobs posted since then (the previous round, minus a small overlap),
+    from every company, deeper than the button's search: all pages of each site's role search until the postings are older
+    than `since`, no maxJobs / maxPerCompany limits (companyJobs.schedule: queries, maxPagesPerQuery, maxJobs). seen_ids
+    (a dict, id -> time) = jobs already read in an earlier round: skipped, and every job read now is added to it."""
     cfg = cfg if cfg is not None else json.loads(jobfilters.CONFIG.read_text(encoding="utf-8"))
     s = settings(cfg)
     if not s["companies"]:
         raise ValueError("no companies in companyJobs.companies (job-search-config.json)")
-    hours = s["postedWithinHours"]
+    sch = s.get("schedule") or {}
+    cutoff = since
+    if since:
+        hours = max((dt.datetime.now(UTC) - since).total_seconds() / 3600, 0.25)
+        pages, max_jobs, max_per = int(sch.get("maxPagesPerQuery", 100)), int(sch.get("maxJobs", 1000)), 10 ** 6
+        queries = list(sch.get("queries") or ["engineer", "developer"])
+    else:
+        hours = s["postedWithinHours"]
+        pages, max_jobs, max_per = s["pages"], s["maxJobs"], s["maxPerCompany"]
+        queries = search_queries(s)
     ctx = jobfilters.context(cfg=cfg, log_jobs=applog.load()["jobs"], hours=hours)
     # Greenhouse / Lever / Ashby return the company's whole board: read it once and keep every title the role's
     # titleInclude matches ("Backend Engineer", "Platform Engineer" ...), not only titles with a query's exact words.
     # Workday / Oracle / Amazon / Microsoft are searches: one per query.
     whole = {"greenhouse", "lever", "ashby"}
     tasks = [(c, "") for c in s["companies"] if c["ats"] in whole]
-    tasks += [(c, q) for c in s["companies"] if c["ats"] not in whole for q in search_queries(s)]
+    tasks += [(c, q) for c in s["companies"] if c["ats"] not in whole for q in queries]
     pool, failed = {}, set()
     with concurrent.futures.ThreadPoolExecutor(8) as ex:
-        futures = {ex.submit(FETCH[c["ats"]], c, q, s["pages"]): c for c, q in tasks}
+        futures = {ex.submit(FETCH[c["ats"]], c, q, pages, cutoff): c for c, q in tasks}
         for f in concurrent.futures.as_completed(futures):
             try:
                 for j in f.result():
@@ -393,6 +442,8 @@ def candidates(board_jobs, cfg=None, log=print):
     for j in pool.values():
         if f'company:{j["id"]}' in board_jobs or (applog.norm(j["company"]), applog.norm(j["title"])) in seen:
             continue
+        if seen_ids is not None and j["id"] in seen_ids:
+            continue  # read in an earlier round
         if not software.search(j["title"]) or (not_role and not_role.search(j["title"])):
             continue
         same = (applog.norm(j["company"]), applog.norm(j["title"]))
@@ -405,28 +456,33 @@ def candidates(board_jobs, cfg=None, log=print):
         if not flags:
             first.append(j)
     first.sort(key=lambda j: j.get("posted") or "", reverse=True)
-    first = first[:s["maxJobs"] * 4]  # read at most 4x the postings needed
+    if not since:
+        first = first[:max_jobs * 4]  # the button: read at most 4x the postings needed
     with concurrent.futures.ThreadPoolExecutor(8) as ex:
         read = list(ex.map(_details, first))
+    if seen_ids is not None:
+        stamp = dt.datetime.now(UTC).isoformat(timespec="seconds")
+        for j in read:
+            seen_ids[j["id"]] = stamp
     found, per = [], {}
     for j in read:  # newest first, at most maxPerCompany per company so one big employer doesn't fill the list
-        if jobfilters.check(j, ctx)[0] or per.get(j["company"], 0) >= s["maxPerCompany"]:
+        if jobfilters.check(j, ctx)[0] or per.get(j["company"], 0) >= max_per:
             continue
         per[j["company"]] = per.get(j["company"], 0) + 1
         found.append(j)
-        if len(found) >= s["maxJobs"]:
+        if len(found) >= max_jobs:
             break
     for j in found:
-        j["description"] = f"[last {hours:g}h] " + j["description"]
-    note = (f"{len(s['companies'])} company sites, last {hours:g}h: {len(pool)} jobs found, {len(first)} passed the "
-            f"title / location filters, {len(found)} added")
+        j["description"] = (f"[posted since the last round, {hours:.1f}h] " if since else f"[last {hours:g}h] ") + j["description"]
+    note = (f"{len(s['companies'])} company sites, {'since the last round' if since else 'last'} {hours:.1f}h: {len(pool)} jobs found, "
+            f"{len(first)} passed the title / location filters, {len(found)} added")
     if failed:
         note += f" | no answer from: {', '.join(sorted(failed))}"
     return found, note
 
 
-def run(board_jobs, cfg=None):
-    return candidates(board_jobs, cfg)
+def run(board_jobs, cfg=None, since=None, seen_ids=None):
+    return candidates(board_jobs, cfg, since=since, seen_ids=seen_ids)
 
 
 def check_sites(cfg):

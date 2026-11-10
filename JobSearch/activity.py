@@ -90,8 +90,17 @@ def migrate():
     if not LEGACY.exists():
         return
     DIR.mkdir(parents=True, exist_ok=True)
+    # Move the old file aside FIRST (atomic; replaces a leftover .migrating file): the split can then never run twice on
+    # the same events, and the final name never collides with an earlier .migrated file (that FileExistsError used to
+    # repeat the split - and append the same events to the session logs - on every logged application).
+    import os, time
+    work = LEGACY.with_suffix(".jsonl.migrating")
+    try:
+        os.replace(LEGACY, work)
+    except OSError:
+        return  # another process is migrating right now
     groups, open_session = {}, None
-    for ev in _read(LEGACY):
+    for ev in _read(work):
         if ev.get("type") == "schedule_start":
             open_session = session_name(ev["ts"])
         stem = _stem_of(ev, open_session)
@@ -101,7 +110,10 @@ def migrate():
     for stem, evs in groups.items():
         _write(stem, _read(DIR / f"{stem}.jsonl") + evs)
         (DIR / f"{stem}.md").write_text(render(evs=evs), encoding="utf-8")
-    LEGACY.rename(LEGACY.with_suffix(".jsonl.migrated"))
+    done = LEGACY.with_suffix(".jsonl.migrated")
+    if done.exists():
+        done = LEGACY.with_suffix(f".jsonl.migrated-{time.strftime('%Y%m%d-%H%M%S')}")
+    os.replace(work, done)
 
 
 def session_files():
