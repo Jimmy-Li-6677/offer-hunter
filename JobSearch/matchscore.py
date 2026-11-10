@@ -235,7 +235,9 @@ _HEADINGS = [
     ("req", re.compile(r"\b(?:minimum|basic|required|must[- ]have|key|core|job|position)\s+" + _Q + r"\b|"
                        r"\bwhat you(?:'|’)?ll (?:bring|need)\b|\bwhat you(?:'|’)?ve done\b|\bwhat we(?:'|’)?re looking for\b|"
                        r"\bwho you are\b|\bwh(?:o|at) we are looking for\b|\bwhat you need to be successful\b|\bminimum education and experience\b|\bskills required\b|\byou will be a great fit if\b|\bwho we(?:'|’)?re looking for\b|\bwhat you bring\b|\byou might thrive in this role if\b|\bwhat we need to see\b|\bwhat you need to (?:have|succeed)\b|\byou (?:have|bring|will have|should have)\s*:|\brequired education\b|"
-                       r"\babout you\b|\byour (?:background|experience|skills)\s*:", re.I)),
+                       r"\babout you\b|\byour (?:background|experience|skills)\s*:|"
+                       r"\b(?:skills|experience|qualifications|requirements) you(?:'|’)?ll (?:need|bring|have)\b|\byou(?:'|’)?ll need to (?:bring|have)\b|"
+                       r"\bwhat you(?:'|’)?ll need to (?:bring|have)\b", re.I)),
     ("pref", re.compile(r"(?-i:\b(?:Preferred|PREFERRED)(?=\s*[:;]))")),
     ("req", re.compile(r"(?-i:(?<!Travel )(?<!Physical )(?<!Authorization )(?<!Program )(?<!Work )"
                        r"\b(?:Qualifications|Requirements|QUALIFICATIONS|REQUIREMENTS)\b)")),

@@ -10,6 +10,21 @@ Ground rules:
 - Self-identification questions (gender, race, veteran, disability, ...) are optional - always offer "Prefer not to answer" / "I don't wish to answer".
 - Never ask for, type or store passwords. Never put real values into `examples\`.
 
+## 0. Check the requirements first
+
+This project runs on **Windows 10/11 only** (the launcher is a Windows exe and `JobSearch\applychrome.py` uses the Windows API). Check each tool and install what is missing (the user approves installs; `winget` is the quickest):
+
+| Tool | Check | Install |
+|---|---|---|
+| Git | `git --version` | `winget install Git.Git` |
+| Python 3.11+ (on PATH) | `python --version` | `winget install Python.Python.3.13` |
+| Node.js 18+ (builds the browser bridge) | `node --version` | `winget install OpenJS.NodeJS.LTS` |
+| Google Chrome | `C:\Program Files\Google\Chrome\Application\chrome.exe` exists | <https://www.google.com/chrome> |
+| MiKTeX (`pdflatex`, for the per-job tailored resume) | `pdflatex --version` | `winget install MiKTeX.MiKTeX` (let it install missing packages on the fly) |
+| Claude Code | `claude --version` | <https://claude.com/claude-code> |
+
+Python needs no extra packages (standard library only). Tell the user up front what the tool costs: every application runs in its own Claude subagent (default model Sonnet, choosable on the job board), so a busy day of applications uses a noticeable amount of their Claude usage; `python jobboard.py log` shows an estimate per application.
+
 ## 1. Create the private folder
 
 A fresh clone has an empty `<repo>\private\` folder (only `.gitkeep` - keep it; everything else in `private\` is gitignored). If it already has other files, ask before overwriting anything. Otherwise:
@@ -30,6 +45,22 @@ Ask the user for the full path of their resume (PDF preferred; DOCX is fine to r
 ## 3. Fill `private\resume.json` from the resume
 
 Use the structure of `examples\resume.example.json`: `summary`, every job in `experience` (title, company, location, `from` / `to` as MM/YYYY, `current: true` + `to: null` for the current job, and **all** bullets word for word), `education` (school, location, degree, field, from/to, GPA if listed), `skills` (grouped as in the template). Set `source` to `<pdf file name> (updated <today>)`. Show the user a short summary (jobs + dates, degree) and ask them to confirm or correct.
+
+## 3b. Create the master LaTeX resume (for per-job tailored resumes)
+
+The job board rebuilds a one-page PDF for each queued job (skills reordered, a few bullets reworded to lead with what the posting asks for) from a **master `.tex`** in `private\`. There is no ready-made template in `examples\`, so build it from the resume. `JobSearch\tailor.py` needs exactly this structure:
+- The one-page "Jake's Resume" layout (the popular Overleaf template): `\documentclass[letterpaper,11pt]{article}` and its macros `\resumeSubheading{..}{..}{..}{..}`, `\resumeProjectHeading{\textbf{..}}{..}`, `\resumeItemListStart` / `\resumeItemListEnd`, `\resumeItem{..}`, `\resumeSubHeadingListStart` / `\resumeSubHeadingListEnd`.
+- Sections: Education, Experience (one `\resumeSubheading` per job with its bullets as `\resumeItem{..}`), Projects (optional), Technical Skills.
+- **Technical Skills as one line per group**, in exactly this form (it is parsed with a regular expression): `\textbf{Languages}{: Python, Java, SQL} \\`
+- Escape LaTeX characters (`#`, `&`, `%`, `$`, `_`) and keep the content identical to `resume.json` - same jobs, dates, bullets word for word.
+
+Steps:
+1. Write `<repo>\private\<first>_<last>_resume.tex` (lower-case name is fine) from `resume.json` / the PDF.
+2. Compile it: `pdflatex -interaction=nonstopmode <file>.tex` in `private\`. It must be **one page**; fix margins / spacing, never drop content. Show the user the PDF and let them confirm.
+3. In `private\job-search-config.json` set `resumeTailor.masterTex` to the file name, `resumeTailor.pdfName` to the PDF name employers should see, and `resumeTailor.masterPdf` to the finished master PDF (use it as the resume PDF of step 2 as well).
+4. Check: `cd <repo>\JobSearch`, `python tailor.py --check` (compiler and master files found).
+
+If the user does not want tailored resumes, set `resumeTailor.enabled` to `false` and skip this step.
 
 ## 4. Fill `private\.env`
 
@@ -113,9 +144,12 @@ This creates `private\applications.json` (empty) from the template.
 
 ## 8. Browser bridge and launcher
 
-Follow `claude-browser-bridge\START_HERE.md`. Claude can run the commands; the user must do the Chrome parts:
+Follow `claude-browser-bridge\START_HERE.md`. Claude can run the commands; the user must do the Chrome parts.
+
+**ONE CHROME ONLY (important).** Claude works in a separate **job-only Chrome profile** (`launcher.chromeProfileDir`, default `private\chrome-job-profile`): its own folder, its own job-site logins, none of the user's personal accounts. The Browser Bridge extension must be installed **only in that profile**. If the extension is also in the user's everyday Chrome, the bridge connects to whichever Chrome connected last and Claude ends up opening tabs in the wrong browser. Tell the user this before they install anything, and check at the end of this step: in their everyday Chrome `chrome://extensions` must not list *Claude Browser Bridge*. Start the job profile with `python <repo>\JobSearch\applychrome.py open` (or `StartJobSearch.exe`) - during an application run it opens **behind the user's other windows** (still reachable from the taskbar) and `applychrome.py close` closes it when the queue is done; tabs left open for the user (sign-in, a question) keep it open. Only one Claude session at a time can use the bridge (port 8765): a second session reports "Another Claude Code session already runs the browser bridge".
+
 1. Claude: `cd <repo>\claude-browser-bridge\server`, `npm install`, `npm run build`, `npm run token` (writes `BRIDGE_TOKEN` into `private\.env`).
-2. User: `chrome://extensions` → Developer mode → **Load unpacked** → `<repo>\claude-browser-bridge\extension`; click the extension icon → paste the token → **Save & connect**; add the job sites they use to *Allowed sites* (LinkedIn, greenhouse.io, ashbyhq.com, lever.co, myworkdayjobs.com, applytojob.com, ...). Tabs Claude controls go into an orange **Claude** tab group with an orange page frame (*Highlight tabs Claude controls* in the popup). After pulling an update of the extension, click its **reload ↻** icon in `chrome://extensions`.
+2. User, **in the job-only Chrome window that `applychrome.py open` just started**: `chrome://extensions` → Developer mode → **Load unpacked** → `<repo>\claude-browser-bridge\extension`; click the extension icon → paste the token → **Save & connect**; add the job sites they use to *Allowed sites* (LinkedIn, greenhouse.io, ashbyhq.com, lever.co, myworkdayjobs.com, applytojob.com, ...). Tabs Claude controls go into an orange **Claude** tab group with an orange page frame (*Highlight tabs Claude controls* in the popup). After pulling an update of the extension, click its **reload ↻** icon in `chrome://extensions`.
 3. Claude: `claude mcp add --scope user browser-bridge -- node <repo>\claude-browser-bridge\server\dist\index.js` (skip if `claude mcp list` already shows `browser-bridge`).
 4. Claude: run `<repo>\launcher\build.cmd`, then `<repo>\StartJobSearch.exe --dry-run > %TEMP%\dry.txt` and check it reports the config, the `.env` values and no missing `${NAME}` placeholders. Fix anything it complains about.
 
@@ -129,3 +163,22 @@ Run `python applog.py missing` one last time - it must print "REQUIRED: all set"
 - how to start: double-click `StartJobSearch.exe`, or `cd <repo>\JobSearch`, `claude`, "continue my job search",
 - how it works: on the job board click **Search Google Jobs** / **Search LinkedIn** → Claude adds about 10 candidates → click **Add to apply queue** on the ones to apply to → Claude applies in a new Chrome tab per job and logs each one; jobs that need them (sign-in, CAPTCHA, unknown question, a rule they failed) wait under **Waiting on you**,
 - that everything personal is in `private\` and is never committed.
+
+## 10. Before the first real application (tell the user, and let them confirm)
+
+1. **Test mode first.** `apply.testMode` is on by default: a finished application is logged as **Test** (it is sent, but waits in the board's *Test* tab until the user checks it and clicks **Move to Submitted**). `apply.autoSubmit` is off in the template: Claude fills everything, stops at the last Submit button and logs "READY TO SUBMIT". Let the user pick; suggest keeping both for the first 3-5 applications.
+2. **The answers are the user's responsibility.** Claude answers application questions from `resume.json` and the `ANSWER_*` bank and never invents facts - but whatever is in the bank (years of experience, work authorization, "have you ever...") goes onto real forms under the user's name. Ask them to read the answer bank once (`python answerbank.py missing` lists the blanks; the board's **Update my answers** form fills them) and keep it truthful.
+3. **Sites have rules.** Many employers limit or forbid automated applying, cap applications per account (e.g. Microsoft: 10 submitted at a time), and use CAPTCHAs - Claude never solves a CAPTCHA: that job waits under **Waiting on you** with its tab left open. Applications are sent from the user's own accounts and IP.
+4. **Passwords.** The one-time job-site password lives in `private\.env` as `APPLICANT_PASSWORD` (and the optional `APPLICANT_PASSWORD_ALT`); Claude types it with the bridge's `type_secret` and never sees or prints it. If a sign-in is rejected or the account already exists, Claude uses the site's **password reset** route (reset mail read in the user's mailbox in the browser, new password = `APPLICANT_PASSWORD`). Reading the mailbox needs the user to be signed in to it in the job-only Chrome (e.g. outlook.live.com or mail.google.com) and the site added to *Allowed sites*.
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| "Another Claude Code session already runs the browser bridge (port 8765)" | Two Claude sessions are open. Close one, then `/mcp` → reconnect `browser-bridge` (the second session's bridge gave up at start-up). |
+| "Chrome extension is not connected" | The job-only Chrome is not running (`python JobSearch\applychrome.py open`) or the extension has the wrong token (`npm run token` in `claude-browser-bridge\server`, paste it in the extension popup). |
+| Tabs open in the wrong Chrome / "No tab with id" | The extension is also installed in another Chrome profile. Remove it there (see step 8, ONE CHROME ONLY). |
+| "No current window" | The job Chrome has no window: `python JobSearch\applychrome.py open`. |
+| No orange frame on Claude's tabs | In the extension popup tick *Highlight tabs Claude controls*; after pulling an update click **reload ↻** in `chrome://extensions`. |
+| Job board shows old behaviour after a `git pull` | The board server keeps the old code until restarted: close it (the `pythonw` process running `jobboard.py serve`) and start `StartJobSearch.exe` again. |
+| Application stops at "a question the answer bank does not cover" | Answer it once; Claude saves it with `python applog.py answer ...` and uses it on every later form. |

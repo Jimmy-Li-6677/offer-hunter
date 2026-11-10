@@ -361,17 +361,24 @@ def run_simplify(sid):
             save_board(board)
 
 
-def run_company(sid):
+def run_company(sid, since=None):
     """Background thread for the "Search company sites" button: ask every company in companyJobs.companies (Fortune 500 /
-    large employers) for new jobs through their careers sites' public job APIs (companyjobs.py) and add candidates."""
+    large employers) for new jobs through their careers sites' public job APIs (companyjobs.py) and add candidates.
+    since (a datetime; the Schedule passes the start of its previous round minus a small overlap) = only jobs posted
+    since then; the ids of the jobs read are kept in the board file (companySeen, 14 days) so a later round skips them."""
     import companyjobs  # same folder
     try:
         with LOCK:
-            board_jobs = known_jobs(load_board())
-        jobs, note = companyjobs.run(board_jobs)
+            board = load_board()
+            board_jobs = known_jobs(board)
+            seen_ids = dict(board.get("companySeen") or {}) if since else None
+        jobs, note = companyjobs.run(board_jobs, since=since, seen_ids=seen_ids)
         with LOCK:
             board = load_board()
             n = merge(board, jobs)
+            if seen_ids is not None:
+                keep = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=14)).isoformat(timespec="seconds")
+                board["companySeen"] = {k: v for k, v in seen_ids.items() if v >= keep}
             set_search(board, sid, "done", note=note, found=n)
             save_board(board)
     except Exception as e:  # network / config errors: show them on the page
@@ -473,7 +480,17 @@ def apply_brief(board, key):
             'Fill everything but do NOT click the final Submit; leave the tab open and log status "Needs User" with note "READY TO SUBMIT ...".') +
            (' (Test = sent, waiting for the user to move it to Submitted on the board.)' if test and auto else ""),
            "", "STEPS"]
-    steps = []
+    steps = [
+        "POSTING GONE CHECK (user 2026-11-09), BEFORE anything else (no resume revision, no sign-in): open the apply link in a NEW tab and read what it shows. "
+        "If the job no longer exists - the page says the job is closed / no longer available / expired / filled / removed / not found, it is a 404, there is no Apply button "
+        "because the posting is closed, or the link only redirects to a generic careers search page without this job - do NOT apply: log "
+        f'{lg.replace("<STATUS>", "Skipped").replace("<one line>", "posting no longer exists: <what the page said>")} '
+        'close the tab and reply \"Skipped | <company> | <title> | posting no longer exists | tab closed\". '
+        "(A page that merely needs a sign-in, loads slowly or shows a cookie banner is NOT gone - check twice before skipping.)",
+        "COMPANY DAILY CAP CHECK (user rule: at most 2 applications to the same company per day): right after the gone-check run "
+        f'python applog.py check "{j.get("company")}" "{j.get("title")}" --id {j.get("id") or j["key"]} . If it prints DAILY COMPANY CAP REACHED (exit code 2) and the lead did NOT tell you the user approved '
+        "this job, do not apply (no resume revision, no sign-in): log it as Candidate with the note \"company daily cap - apply on a later day\" "
+        f'({lg.replace("<STATUS>", "Candidate").replace("<one line>", "company daily cap - apply on a later day")}) and reply \"Candidate | <company> | <title> | company daily cap | no tab\".']
     if tailor.wants_revision(j):
         steps.append(f'RESUME FIRST (REQUIRED - do not skip, and upload the rebuilt PDF, not the master): python tailor.py brief {key} (posting + exact resume bullets + rules), then write an edits JSON file in your '
                      f'scratchpad and run python tailor.py revise {key} <file> (it rejects invented numbers / tools; fix and rerun; '
@@ -481,19 +498,22 @@ def apply_brief(board, key):
     steps += [
         "Check the posting against the rules below BEFORE filling anything; if it breaks one, do not apply: log \"Needs approval\" with the reason and reply.",
         "Open the apply link in a NEW tab with the browser-bridge tools (open_tab). 'Site not allowed: <domain>' -> log Needs User 'site not allowed: <domain>' and reply.",
-        "Fill every field from APPLICANT / ANSWERS below (answer bank first). NEVER GUESS: if a question is not covered by ANSWERS - especially anything about the "
-        "applicant's personal, family or spouse situation, military / veteran status of relatives, criminal / legal / health / financial history, or references - do "
-        "NOT pick an answer: leave the tab open, log Needs User with the exact question, and reply (the user answers once and it is saved to the bank). "
-        "Upload the resume with upload_file (a 'Choose File' button works too). "
-        "Do dropdowns ONE AT A TIME (parallel ones clash); for Workday-style multi-level pickers click through the menu.",
-        "Sign-in / create account pages: email = APPLICANT_EMAIL; type the password ONLY with type_secret(name=APPLICANT_PASSWORD) into password fields "
-        "(never read, print or log it). If an account already exists use sign in, else Create Account. If APPLICANT_PASSWORD is rejected at sign in, or the site says it cannot set that password, retry ONCE with type_secret(name=APPLICANT_PASSWORD_ALT) (same rules: never print it) before giving up or resetting; if the account is created with it, mention \"used ALT password\" in the log note. Email code / verification link: do NOT use "
-        "mailcheck.py (not set up). Open https://outlook.live.com/mail/0/ in a SECOND new tab (already signed in), wait ~20 s after the site says it "
-        "sent the mail, check Inbox then Junk, open ONLY the newest mail from that company / site, copy just the code or the verify link from it "
-        "(never paste the mail text in your reply), close the Outlook tab, go back to the application tab and type the code / open the link. "
-        "If the mail is not there after 2 tries (a minute apart), or Outlook asks to sign in -> log Needs User.",
-        "Never touch CAPTCHA frames. Blocked (CAPTCHA, code you cannot get, a question the bank does not cover, site not allowed): leave the tab OPEN, "
-        "log Needs User with the reason, reply.",
+        f'SALARY / PAY-EXPECTATION FIELDS (user 2026-11-10: never a random number): run python salary.py {key} --area "<the area of the office you chose on the form>" and, when the posting page shows a salary range, '
+        '--lo <low> --hi <high> (and --years <years the posting asks for> if the page says so); type the FIRST line it prints (digits only, no $ or commas). It combines the user\'s expected pay for that location, '
+        'the posted range and his experience. For a bucket / dropdown ("$75,001 - $85,000") pick the bucket containing that number. IF THE POSTING SHOWS NO CLEAR SALARY RANGE (none listed, or only vague wording): look the pay up on Glassdoor in a NEW tab (search the company, role title and location on glassdoor.com; use the estimated base pay range for that role, not total pay and not a single average) and pass it as --lo <low> --hi <high> --source glassdoor. If Glassdoor needs a sign-in, shows a block page or CAPTCHA, is not allowed by the browser bridge, or has no figure for the role, do not fight it: run salary.py without a range (it uses the location expectation). Never estimate a salary yourself.',
+        "Fill every field from APPLICANT / ANSWERS below (answer bank first). QUESTIONS THE BANK DOES NOT COVER (user 2026-11-10) - the line is FACT vs NARRATIVE. "
+        "NARRATIVE / OPINION questions (free text and preference: 'why this company / role', 'why did you leave your last job', 'describe a project', 'strengths', "
+        "'anything else', 'how did you hear about us', work-style or preference choices): do NOT stop - answer them yourself, honestly, from the ANSWERS below and the resume "
+        "(a short, specific, truthful draft; where the real reason is not on file stay neutral and never invent a story), then SAVE each: python applog.py answer "
+        "--section <matching section of the bank> --question \"<the question>\" --answer \"<what you answered>\" --job \"<company> | <role>\" - it goes into the bank for all later "
+        "forms AND onto the job board's 'Answers to confirm' list under the apply queue, where the user confirms or corrects it. "
+        "FACT questions (anything with a true / false answer about the applicant's own history, status or background: clearance held or ever held, citizenship / work "
+        "authorization in other countries, licenses, certifications, a past employer's address / dates / supervisor, salary history, references, languages, legal / criminal / health / "
+        "financial history, family or relatives, military service, previous applications or employment at this company ...) that are NOT in the bank or stated in the resume: "
+        "do NOT answer and do NOT infer - leave the tab open, log Needs User with the exact question and reply; the user answers once, it is saved to the bank, and it is "
+        "reused afterwards. A fact the bank or the resume already states (degree, dates, GPA, skills, years per skill, citizenship, sponsorship ...) is simply answered from it. "
+        "VOLUNTARY SELF-IDENTIFICATION FORMS (disability CC-305, veteran status, gender, race / ethnicity - user 2026-11-10): these must NEVER block the application. Fill them from the bank's self-identification answers (ANSWER_SELFID_*; where the bank says prefer not to answer, choose that option); if such a form asks for a typed Name and Date, type the applicant's legal name (ANSWER_CONTACT_NAME / the legal first and last name in the bank) and today's date - the user approved this for self-ID forms only. Every OTHER signature / initials / swear-or-attest field (e.g. 'type your name to verify the resume is truthful', background-check authorizations, initials boxes): never fill it - leave the tab open and log Needs User. Never answer" " a signature / initials / swear-or-attest field outside the rule above, and never answer 'do you meet ALL required qualifications' with Yes when a required qualification is missing. "
+        "Never invent facts and never claim experience the resume does not show. "
         f'Finish per MODE above. Log with: {lg}  (use the status named in MODE / the reason above; always include --url).',
         "TOKEN HYGIENE: use read_page with a query / visibleOnly; avoid get_text of whole pages and screenshots unless stuck; do not paste page text in your reply.",
         'REPLY with ONE line only: "<status> | <company> | <title> | <short reason> | tab open/closed". Close the tab of a finished job.']
@@ -615,8 +635,9 @@ def auto_queue_jobs(board, since, min_score, limit, max_age_hours=168, analyze=F
     return [(j["key"], j.get("company"), j.get("title"), sim) for sim, j in picked]
 
 
-def run_search_now(source):
-    """One search of the schedule, run in this thread. Returns a short result text."""
+def run_search_now(source, since=None):
+    """One search of the schedule, run in this thread. Returns a short result text. since = only for the company
+    sites search: jobs posted since that time (the schedule's previous round)."""
     with LOCK:
         board = load_board()
         opts = None
@@ -633,19 +654,21 @@ def run_search_now(source):
         save_board(board)
     if source == "simplifysite":
         run_simplify_site(r["id"], opts)
+    elif source == "company":
+        run_company(r["id"], since=since)
     else:
-        {"company": run_company, "simplify": run_simplify}[source](r["id"])
+        run_simplify(r["id"])
     with LOCK:
         done = next((x for x in load_board().get("searches", []) if x["id"] == r["id"]), r)
     return (f'{SEARCH_SOURCES[source]}: {done["status"]}, {done.get("found", 0)} new' +
             (f' ({done["note"]})' if done["status"] == "failed" else "")), done
 
 
-def timed_search(source, started, rnd):
+def timed_search(source, started, rnd, since=None):
     """run_search_now + an activity log line (button, how long, status, how many new jobs met the filters)."""
     import time
     t0 = time.monotonic()
-    text, done = run_search_now(source)
+    text, done = run_search_now(source, since=since)
     done = done or {}
     activity.log({"type": "search", "schedule": started, "round": rnd, "button": activity.BUTTONS.get(source, source),
                   "seconds": round(time.monotonic() - t0), "status": done.get("status", "skipped"),
@@ -669,6 +692,15 @@ def schedule_cycle():
             activity.log({"type": "schedule_end", "schedule": sch["startedAt"], "reason": sch["note"]})
             return False
         sch["running"], sch["note"] = True, "searching…"
+        # time frame of this round = the schedule's "Repeat every" value: from the start of the previous round (first
+        # round: one interval back) minus a 10 minute overlap, so a job posted while a round was running is not missed
+        interval = float(sch.get("intervalMinutes") or 60)
+        prev = sch.get("lastRoundStartAt")
+        base = dt.datetime.fromisoformat(prev) if prev else now - dt.timedelta(minutes=interval)
+        if base.tzinfo is None:
+            base = base.replace(tzinfo=dt.timezone.utc)
+        since = base - dt.timedelta(minutes=10)
+        sch["lastRoundStartAt"] = now.isoformat(timespec="seconds")
         save_board(board)
         started, sources, rnd = sch["startedAt"], list(sch["sources"]), sch.get("runs", 0) + 1
     import time
@@ -676,7 +708,7 @@ def schedule_cycle():
     results = []
     for src in sources:
         try:
-            results.append(timed_search(src, started, rnd))
+            results.append(timed_search(src, started, rnd, since=since if src == "company" else None))
         except Exception as e:  # one failing search never stops the schedule
             results.append(f"{SEARCH_SOURCES[src]}: {type(e).__name__}: {e}")
     queued = []
@@ -870,6 +902,10 @@ class Handler(BaseHTTPRequestHandler):
             if not local_request(self):
                 return self.send(403, {"error": "forbidden"})
             return self.send(200, {"questions": answerbank.questions()})
+        if self.path == "/api/review":
+            if not local_request(self):
+                return self.send(403, {"error": "forbidden"})
+            return self.send(200, {"items": applog.review_load()})
         self.send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -925,6 +961,16 @@ class Handler(BaseHTTPRequestHandler):
                 request_profile(board, path)
                 save_board(board)
             return self.send(200, view(board))
+        if self.path == "/api/waiting-all":
+            # the Test tab's "Move all to Submitted": every listed Test job the user checked -> Submitted
+            moved = 0
+            with LOCK:
+                board = load_board()
+                for key in [str(k) for k in body.get("keys") or []]:
+                    if waiting_action(board, key, "submitted") is None:
+                        moved += 1
+                board = load_board()
+            return self.send(200, {**view(board), "moved": moved})
         if self.path == "/api/waiting":
             with LOCK:
                 board = load_board()
@@ -935,6 +981,27 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 board = load_board()
             return self.send(200, view(board))
+        if self.path == "/api/review":
+            # answers the apply subagents gave to questions the bank did not cover: confirm (leave in the bank, drop from the list),
+            # edit (the bank entry changes too) or remove from the list
+            items, rid, act = applog.review_load(), body.get("id"), body.get("action")
+            hit = next((i for i in items if i.get("id") == rid), None)
+            if act == "confirm-all":
+                items = []
+            elif hit is None:
+                return self.send(404, {"error": "no such item"})
+            elif act == "edit":
+                new = str(body.get("answer") or "").strip()
+                if not new:
+                    return self.send(400, {"error": "empty answer"})
+                applog.upsert_answer(applog.ENV, hit.get("section", ""), hit["question"], hit["key"], applog.env_quote(new))
+                hit["answer"] = new
+            elif act in ("confirm", "remove"):
+                items = [i for i in items if i.get("id") != rid]
+            else:
+                return self.send(400, {"error": "action must be confirm / edit / remove / confirm-all"})
+            applog.review_save(items)
+            return self.send(200, {"items": items})
         if self.path == "/api/answers":
             n = answerbank.save(body.get("answers") or {})
             return self.send(200, {"saved": n, "questions": answerbank.questions()})

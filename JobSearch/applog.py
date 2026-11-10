@@ -199,6 +199,33 @@ def section_prefix(section):
     return re.sub(r"[^A-Z0-9]", "", section.upper())[:8] or "MISC"
 
 
+# ---------- answers to confirm (user 2026-11-10) ----------
+# When an application asks something the answer bank does not cover, the apply subagent answers it from the answer sheet / resume,
+# saves it to the bank and lists it here (`applog.py answer ... --job "<company | role>"`); the job board shows the list under the
+# apply queue so the user can confirm / correct it later. A correction updates the bank entry (jobboard.py /api/review).
+REVIEW_FILE = PRIVATE / "answers-to-confirm.json"
+
+
+def review_load():
+    try:
+        return json.loads(REVIEW_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
+def review_save(items):
+    REVIEW_FILE.write_text(json.dumps(items, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def review_add(job, question, answer, key, section):
+    items = review_load()
+    rid = max([int(i.get("id", 0)) for i in items] + [0]) + 1
+    items.append({"id": rid, "ts": dt.datetime.now().isoformat(timespec="seconds"), "job": job, "question": question,
+                  "answer": answer, "key": key, "section": section})
+    review_save(items)
+    return rid
+
+
 def cmd_answer(a):
     key = a.key or "ANSWER_{}_{}".format(section_prefix(a.section),
                                          "_".join(re.sub(r"[^A-Z0-9]+", " ", a.question.upper()).split()[:8]))
@@ -206,6 +233,21 @@ def cmd_answer(a):
     if ENV_EXAMPLE.exists():
         upsert_answer(ENV_EXAMPLE, a.section, a.question, key, '""')
     print(f"{action}: {key} (section {a.section})")
+    if getattr(a, "job", None):
+        rid = review_add(a.job, a.question, a.answer, key, a.section)
+        print(f"listed under 'Answers to confirm' on the job board (#{rid}) - the user confirms or corrects it later")
+
+
+def cmd_review(a):
+    items = review_load()
+    if a.action == "list":
+        for i in items:
+            print(f'#{i["id"]} | {i["job"]} | {i["question"]} -> {i["answer"]}')
+        print(f"{len(items)} answer(s) waiting for the user's confirmation")
+    elif a.action == "confirm":
+        keep = [i for i in items if a.id is not None and int(i["id"]) != a.id]
+        review_save(keep if a.id is not None else [])
+        print("confirmed" + (f" #{a.id}" if a.id is not None else " all"))
 
 
 REQUIRED_ENV = ["APPLICANT_EMAIL", "APPLICANT_PHONE", "APPLICANT_CITY_STATE_ZIP", "ANSWER_CONTACT_NAME",
@@ -318,6 +360,9 @@ def main():
     for f in ("section", "question", "answer"):
         an.add_argument(f"--{f}", required=True)
     an.add_argument("--key")
+    an.add_argument("--job", help="'<company> | <role>': also list the answer under 'Answers to confirm' on the job board")
+    rv = sub.add_parser("review", help="answers given without a bank entry, waiting for the user's confirmation")
+    rv.add_argument("action", choices=["list", "confirm"]); rv.add_argument("id", nargs="?", type=int)
     sub.add_parser("missing")
     a = p.parse_args()
     if a.cmd == "check":
@@ -333,6 +378,8 @@ def main():
         cmd_answer(a)
     elif a.cmd == "missing":
         cmd_missing(a)
+    elif a.cmd == "review":
+        cmd_review(a)
     else:
         cmd_note(a)
 

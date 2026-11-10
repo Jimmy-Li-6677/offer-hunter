@@ -23,7 +23,7 @@ import simplifysite  # same folder: reads a job's simplify.jobs page (requiremen
 LISTINGS_URL = "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json"
 REPO_URL = "https://github.com/SimplifyJobs/New-Grad-Positions"
 CATEGORIES = {"Software", "Software Engineering", "AI/ML/Data", "Data Science, AI & Machine Learning"}
-WIDEN_HOURS = [None, 24, 72, 168]  # None = postedWithinHours (top level of the config)
+WIDEN_HOURS = [24]  # only jobs posted in the last 24 hours, never widened (user 2026-11-09; was None, 24, 72, 168)
 GRAD_2027_TITLE = re.compile(r"\b2027\b")  # "... - 2027 Start" (skip rule: 2027-grad-only programs)
 UTC = dt.timezone.utc
 
